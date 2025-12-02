@@ -1,69 +1,49 @@
+export type Page = 'bulletin' | 'results' | 'settings';
+
 export interface Horse {
   no: number;
   name: string;
   jockey?: string;
-  weight?: string;
-  isFavorite?: boolean; // Kept for backward compat or UI highlighting
+  weight?: string; // Kilo
   
-  // New Engine Fields
-  power_score: number; // 0-100
-  risk_level: 'düşük' | 'orta' | 'yüksek';
-  tempo_style: 'lider/ön grup' | 'orta grup' | 'geriden sprint' | string;
-  form_comment: string;
-  last_races_summary: string;
-  jockey_quality: 'yüksek' | 'orta' | 'düşük';
-  weight_effect: 'avantajlı' | 'nötr' | 'dezavantajlı';
-  distance_surface_fit: string;
-  workout_comment: string;
-}
-
-export interface TempoMap {
-  front_runners: number[];
-  stalkers: number[];
-  closers: number[];
+  // Analiz Alanları
+  power_score: number; // 0-100 arası güç puanı
+  risk_level?: 'düşük' | 'orta' | 'yüksek';
+  
+  // Sonuç Alanları
+  finish_time?: string; // Derece
+  ganyan?: string; // Ganyan
+  difference?: string; // Fark (Boy)
 }
 
 export interface Race {
   id: number;
   time: string;
-  name: string; // "race_type" in new format
-  distance: string; // Combined distance + surface for display
-  trackType: string;
+  name: string;
+  distance: string;
+  trackType: string; // Çim/Kum
   
   horses: Horse[];
   
-  // New Engine Fields
-  power_ranking: number[];
-  tempo_map: TempoMap;
-  race_summary: string;
-  track_surface_comment: string;
-  notes: string;
-  disclaimer: string;
+  race_summary?: string; // Koşu yorumu
 }
 
 export interface DailyProgram {
   city: string;
   date: string;
   races: Race[];
-  summary: string; // General summary for the day
+  summary: string;
   sources: Array<{ title: string; uri: string }>;
-}
-
-export enum CityOption {
-  ISTANBUL = 'İstanbul',
-  ANKARA = 'Ankara',
-  IZMIR = 'İzmir',
-  ADANA = 'Adana',
-  BURSA = 'Bursa',
-  KOCAELI = 'Kocaeli',
-  ELAZIG = 'Elazığ',
-  DIYARBAKIR = 'Diyarbakır',
-  SANLIURFA = 'Şanlıurfa',
-  ANTALYA = 'Antalya'
 }
 
 export interface AnalysisState {
   loading: boolean;
   data: DailyProgram | null;
   error: string | null;
+}
+
+// Basit ayarlar
+export interface AppSettings {
+  showGanyan: boolean;
+  compactMode: boolean;
 }

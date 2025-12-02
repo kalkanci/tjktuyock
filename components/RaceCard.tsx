@@ -1,151 +1,121 @@
-import React, { useState } from 'react';
-import { Clock, Map, Activity, ShieldAlert, Zap, TrendingUp, ChevronDown, ChevronUp, Scale, History } from 'lucide-react';
-import { Race, Horse } from '../types';
-import { DashboardChart } from './DashboardChart';
+import React from 'react';
+import { Clock, Map, Trophy } from 'lucide-react';
+import { Race } from '../types';
 
 interface RaceCardProps {
   race: Race;
+  isResultView?: boolean;
 }
 
-export const RaceCard: React.FC<RaceCardProps> = ({ race }) => {
-  const [expanded, setExpanded] = useState(false);
+export const RaceCard: React.FC<RaceCardProps> = ({ race, isResultView = false }) => {
+  // Sıralama mantığı: Sonuç sayfasıysa No'ya göre (veya bitiriş sırası), Analiz ise Puana göre
+  const sortedHorses = [...race.horses].sort((a, b) => {
+    if (isResultView) return a.no - b.no; 
+    return b.power_score - a.power_score;
+  });
 
-  // Helper for Risk Badge
-  const getRiskBadge = (level: string) => {
-    switch(level) {
-      case 'düşük': return <span className="bg-emerald-500/20 text-emerald-400 text-[10px] px-2 py-0.5 rounded border border-emerald-500/30">Düşük Risk</span>;
-      case 'orta': return <span className="bg-yellow-500/20 text-yellow-400 text-[10px] px-2 py-0.5 rounded border border-yellow-500/30">Orta Risk</span>;
-      case 'yüksek': return <span className="bg-red-500/20 text-red-400 text-[10px] px-2 py-0.5 rounded border border-red-500/30">Yüksek Risk</span>;
-      default: return null;
-    }
-  };
-
-  // Helper for Tempo Badge
-  const getTempoIcon = (style: string) => {
-    if (style?.includes('lider') || style?.includes('ön')) return <Zap size={12} className="text-yellow-400" />;
-    if (style?.includes('sprint') || style?.includes('geri')) return <TrendingUp size={12} className="text-blue-400" />;
-    return <Activity size={12} className="text-gray-400" />;
-  };
-
-  // Sort horses by Power Score for display
-  const sortedHorses = [...race.horses].sort((a, b) => b.power_score - a.power_score);
-  const topPick = sortedHorses[0];
+  // Bülten modunda sadece ilk 6 atı göster (kalabalığı önlemek için)
+  // Sonuç modunda hepsini göster
+  const displayHorses = isResultView ? sortedHorses : sortedHorses.slice(0, 6);
 
   return (
-    <div className="bg-racing-800 rounded-xl border border-racing-700 overflow-hidden shadow-lg hover:shadow-xl transition-all duration-300">
-      {/* Header */}
-      <div className="bg-racing-900/80 p-4 border-b border-racing-700">
-        <div className="flex justify-between items-start">
+    <div className="bg-racing-800 rounded-lg border border-racing-700 overflow-hidden shadow-md flex flex-col h-full">
+      {/* Başlık Çubuğu */}
+      <div className="bg-racing-900/80 p-3 border-b border-racing-700 flex justify-between items-center">
+        <div className="flex items-center gap-3">
+          <div className="bg-racing-gold text-racing-900 font-bold px-2 py-1 rounded text-sm w-12 text-center">
+            {race.id}.K
+          </div>
           <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="bg-racing-gold text-racing-900 font-bold px-2 py-0.5 rounded text-sm">#{race.id}</span>
-              <span className="flex items-center gap-1 text-gray-300 text-xs font-mono">
-                <Clock size={12} /> {race.time}
-              </span>
+            <div className="text-gray-100 font-bold text-sm truncate max-w-[150px] md:max-w-xs">{race.name}</div>
+            <div className="flex items-center gap-2 text-[10px] text-gray-400">
+               <span className="flex items-center gap-0.5"><Clock size={10} /> {race.time}</span>
+               <span className="flex items-center gap-0.5"><Map size={10} /> {race.distance}</span>
+               <span className="text-racing-accent">{race.trackType}</span>
             </div>
-            <h3 className="font-semibold text-gray-100 text-sm md:text-base">{race.name}</h3>
-          </div>
-          <div className="text-right">
-             <div className="flex items-center justify-end gap-1 text-xs text-gray-400">
-                <Map size={12} />
-                <span>{race.distance}</span>
-             </div>
-             <div className="mt-1 text-[10px] text-gray-500 uppercase tracking-wider">{race.trackType}</div>
-          </div>
-        </div>
-        
-        {/* Race Summary & Analysis */}
-        <div className="mt-3 p-3 bg-racing-800/50 rounded-lg border border-racing-700/50">
-          <p className="text-xs text-gray-300 italic mb-2">"{race.race_summary}"</p>
-          <div className="flex items-center gap-2 text-[10px] text-gray-400">
-             <span className="font-bold text-racing-accent">Pist Notu:</span> {race.track_surface_comment}
           </div>
         </div>
       </div>
 
-      {/* Top Pick Highlight */}
-      <div className="px-4 pt-4 pb-2">
-        <div className="flex items-center justify-between mb-2">
-           <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">En Yüksek Power Score</span>
-           <span className="text-xs font-mono text-gray-500">Güç: {topPick?.power_score}/100</span>
+      {/* Özet Not (Sadece Bültende) */}
+      {!isResultView && race.race_summary && (
+        <div className="px-3 py-1.5 bg-racing-700/30 border-b border-racing-700/50">
+          <p className="text-[10px] text-gray-400 line-clamp-1 italic">{race.race_summary}</p>
         </div>
-        <div className="bg-gradient-to-r from-racing-800 to-racing-700 p-3 rounded-lg border-l-4 border-racing-accent flex justify-between items-center">
-          <div>
-            <div className="flex items-center gap-2">
-               <span className="font-bold text-lg text-white">{topPick?.name}</span>
-               <span className="text-xs text-gray-400">({topPick?.jockey})</span>
-            </div>
-            <div className="flex items-center gap-2 mt-1">
-               {getRiskBadge(topPick?.risk_level)}
-               <span className="text-[10px] text-gray-400 flex items-center gap-1">
-                 {getTempoIcon(topPick?.tempo_style)} {topPick?.tempo_style}
-               </span>
-            </div>
-          </div>
-          <div className="text-center">
-            <div className="text-2xl font-black text-racing-accent">{topPick?.power_score}</div>
-          </div>
-        </div>
-      </div>
+      )}
 
-      {/* Expandable Detailed Table */}
-      <div className="px-4 pb-4">
-        <button 
-          onClick={() => setExpanded(!expanded)}
-          className="w-full flex items-center justify-center gap-2 py-2 mt-2 text-xs text-gray-500 hover:text-gray-300 transition-colors border-t border-racing-700"
-        >
-          {expanded ? 'Detayları Gizle' : 'Tüm Atları Göster'} 
-          {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-        </button>
+      {/* Tabela / Liste Görünümü */}
+      <div className="flex-1 overflow-x-auto">
+        <table className="w-full text-left text-sm">
+          <thead className="bg-racing-900/40 text-[9px] uppercase text-gray-500 font-semibold">
+            <tr>
+              <th className="px-3 py-2 w-10 text-center">{isResultView ? 'Sıra' : 'No'}</th>
+              <th className="px-3 py-2">At İsmi</th>
+              <th className="px-3 py-2 hidden sm:table-cell">Jokey</th>
+              <th className="px-3 py-2 text-right">{isResultView ? 'Ganyan/Drc' : 'Güç'}</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-racing-700/50">
+            {displayHorses.map((horse, index) => (
+              <tr key={index} className={`hover:bg-racing-700/40 transition-colors ${index === 0 && !isResultView ? 'bg-racing-accent/5' : ''}`}>
+                
+                {/* Sıra / No Sütunu */}
+                <td className="px-3 py-2 text-center">
+                  {isResultView ? (
+                     // Sonuçlarda Madalya/Sıra İkonu
+                     <div className="flex justify-center">
+                        {horse.no === 1 ? <Trophy size={14} className="text-yellow-400" /> : 
+                         horse.no === 2 ? <Trophy size={14} className="text-gray-300" /> :
+                         horse.no === 3 ? <Trophy size={14} className="text-orange-400" /> :
+                         <span className="text-gray-500 text-xs">{horse.no}.</span>}
+                     </div>
+                  ) : (
+                    // Bültende Tahmin Sırası
+                    <span className={`text-xs font-mono ${index < 3 ? 'text-white font-bold' : 'text-gray-500'}`}>
+                      {index + 1}
+                    </span>
+                  )}
+                </td>
 
-        {expanded && (
-          <div className="mt-3 animate-fade-in space-y-3">
-             {/* Chart for context */}
-             <DashboardChart horses={race.horses} />
+                {/* At İsmi */}
+                <td className="px-3 py-2">
+                  <div className={`font-bold text-xs ${index === 0 && !isResultView ? 'text-racing-accent' : 'text-gray-200'}`}>
+                    {horse.name}
+                    {!isResultView && (
+                       <span className="text-[9px] font-normal text-gray-500 ml-1">({horse.no})</span>
+                    )}
+                  </div>
+                  {/* Mobilde Jokeyi ismin altına al */}
+                  <div className="text-[9px] text-gray-500 sm:hidden block">{horse.jockey}</div>
+                </td>
 
-             {/* Detailed List */}
-             <div className="space-y-2 mt-4">
-               {sortedHorses.map((horse) => (
-                 <div key={horse.no} className="bg-racing-900/50 p-3 rounded border border-racing-700/50 hover:border-racing-600 transition-colors">
-                    <div className="flex justify-between items-start mb-2">
-                       <div className="flex items-center gap-2">
-                          <span className="w-5 h-5 flex items-center justify-center bg-racing-800 rounded-full text-[10px] font-bold text-gray-400">{horse.no}</span>
-                          <span className="font-bold text-sm text-gray-200">{horse.name}</span>
+                {/* Jokey (Desktop) */}
+                <td className="px-3 py-2 hidden sm:table-cell text-[11px] text-gray-400 truncate max-w-[80px]">
+                  {horse.jockey}
+                </td>
+
+                {/* Değerler */}
+                <td className="px-3 py-2 text-right">
+                  {isResultView ? (
+                     <div className="flex flex-col items-end">
+                        <span className="text-racing-gold font-mono font-bold text-xs">{horse.ganyan} TL</span>
+                        <span className="text-[9px] text-gray-500 font-mono">{horse.finish_time}</span>
+                     </div>
+                  ) : (
+                    <div className="flex items-center justify-end gap-1">
+                       <div className="h-1.5 w-12 bg-racing-900 rounded-full overflow-hidden hidden sm:block">
+                          <div className="h-full bg-racing-accent" style={{ width: `${horse.power_score}%` }}></div>
                        </div>
-                       <div className="flex items-center gap-2">
-                          <div className="text-right">
-                             <div className="text-[10px] text-gray-500">Skor</div>
-                             <div className={`font-mono font-bold ${horse.power_score >= 80 ? 'text-green-400' : horse.power_score >= 60 ? 'text-yellow-400' : 'text-gray-500'}`}>
-                               {horse.power_score}
-                             </div>
-                          </div>
-                       </div>
+                       <span className={`font-mono font-bold text-xs ${horse.power_score > 80 ? 'text-racing-accent' : 'text-gray-400'}`}>
+                         {horse.power_score}
+                       </span>
                     </div>
-                    
-                    {/* Metrics Grid */}
-                    <div className="grid grid-cols-2 gap-2 text-[10px] mb-2">
-                       <div className="flex items-center gap-1 text-gray-400 bg-racing-800/50 px-2 py-1 rounded">
-                          <Scale size={10} />
-                          <span>Kilo: <span className="text-gray-300">{horse.weight_effect}</span></span>
-                       </div>
-                       <div className="flex items-center gap-1 text-gray-400 bg-racing-800/50 px-2 py-1 rounded">
-                          <History size={10} />
-                          <span>Form: <span className="text-gray-300 truncate">{horse.last_races_summary}</span></span>
-                       </div>
-                    </div>
-                    
-                    <p className="text-[10px] text-gray-500 border-t border-racing-700/30 pt-1 mt-1">
-                      {horse.form_comment} | {horse.distance_surface_fit}
-                    </p>
-                 </div>
-               ))}
-             </div>
-          </div>
-        )}
-      </div>
-
-      <div className="bg-racing-900/30 px-4 py-2 text-[10px] text-gray-600 text-center border-t border-racing-800">
-        {race.disclaimer}
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );
