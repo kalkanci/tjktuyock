@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Ticket, Wand2, Info, ChevronRight, Calculator, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Ticket, Wand2, Info, ChevronRight, Calculator, AlertCircle, CheckCircle2, ArrowUp } from 'lucide-react';
 import { DailyProgram, BetType, Coupon } from '../types';
 import { generateAdvancedCoupon } from '../services/couponService';
 
@@ -11,8 +11,15 @@ interface CouponCreatorProps {
 export const CouponCreator: React.FC<CouponCreatorProps> = ({ program, onNavigateToBulletin }) => {
   const [selectedBetType, setSelectedBetType] = useState<BetType>('6G');
   const [startRaceIndex, setStartRaceIndex] = useState(0); // For multi-leg
-  const [targetRaceId, setTargetRaceId] = useState<number>(program?.races[0]?.id || 0);
+  const [targetRaceId, setTargetRaceId] = useState<number>(0);
   const [generatedCoupon, setGeneratedCoupon] = useState<Coupon | null>(null);
+
+  // Veri geldiğinde varsayılan targetRaceId'yi ayarla
+  React.useEffect(() => {
+    if (program?.races && program.races.length > 0 && targetRaceId === 0) {
+      setTargetRaceId(program.races[0].id);
+    }
+  }, [program, targetRaceId]);
 
   // Bahis Tipleri Tanımları
   const betTypes: { id: BetType; label: string; desc: string; multiLeg: boolean }[] = [
@@ -41,9 +48,23 @@ export const CouponCreator: React.FC<CouponCreatorProps> = ({ program, onNavigat
 
   const selectedBetInfo = betTypes.find(b => b.id === selectedBetType);
 
+  // --- PROGRAM SEÇİLMEDİYSE UYARI GÖSTER ---
   if (!program) {
-    // App.tsx zaten loading veya empty state gösteriyor, burası teorik olarak çok görünmez ama güvenlik için:
-    return null;
+    return (
+      <div className="flex flex-col items-center justify-center text-center p-8 bg-racing-900/50 rounded-2xl border border-dashed border-racing-800 animate-fade-in mt-4">
+        <div className="w-16 h-16 bg-racing-800 rounded-full flex items-center justify-center mb-4 border border-racing-700 animate-bounce">
+          <ArrowUp size={28} className="text-racing-gold" />
+        </div>
+        <h3 className="text-xl font-bold text-white mb-2">Veri Seçimi Gerekli</h3>
+        <p className="text-gray-400 mb-6 max-w-sm">
+          Kupon oluşturabilmek için önce yukarıdaki panelden <span className="text-racing-gold font-bold">Tarih</span> seçip <span className="text-blue-400 font-bold">Şehri Analiz Et</span> butonuna basınız.
+        </p>
+        <div className="text-xs text-gray-500 bg-racing-950 p-3 rounded-lg border border-racing-800">
+          <Info size={14} className="inline mr-1 mb-0.5" />
+          Yapay zeka önce o günün koşularını analiz etmeli, ardından size özel kuponu üretebilir.
+        </div>
+      </div>
+    );
   }
 
   return (

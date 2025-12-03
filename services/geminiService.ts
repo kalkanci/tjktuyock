@@ -1,15 +1,47 @@
 import { GoogleGenAI } from "@google/genai";
 import { DailyProgram } from "../types";
 
-// Lazy initialization to prevent "process is not defined" crash in browser environments
+// --- GÜVENLİ API KEY ALMA YÖNTEMİ ---
+// Tarayıcıda 'process' nesnesi olmadığı için uygulama çökebilir (Siyah Ekran Hatası).
+// Bu fonksiyon hem Vite (import.meta) hem de Webpack (process.env) ortamlarını güvenle kontrol eder.
+const getSafeApiKey = (): string => {
+  let key = '';
+  
+  // 1. Vite Kontrolü (try-catch ile sarmalandı)
+  try {
+    // @ts-ignore - import.meta typescript hatası vermemesi için
+    if (import.meta && import.meta.env && import.meta.env.VITE_API_KEY) {
+      // @ts-ignore
+      key = import.meta.env.VITE_API_KEY;
+    }
+  } catch (e) {}
+
+  // 2. Eğer Vite key yoksa standart process.env kontrolü
+  if (!key) {
+    try {
+      if (typeof process !== 'undefined' && process.env) {
+        // Vercel genelde REACT_APP_ veya NEXT_PUBLIC_ öneklerini client-side'a geçirir.
+        // Ancak prompt kuralları gereği process.env.API_KEY'e de bakıyoruz.
+        key = process.env.API_KEY || 
+              process.env.REACT_APP_API_KEY || 
+              process.env.NEXT_PUBLIC_API_KEY || 
+              '';
+      }
+    } catch (e) {}
+  }
+  
+  return key;
+};
+
+// Lazy initialization
 let aiInstance: GoogleGenAI | null = null;
 
 const getAI = () => {
   if (!aiInstance) {
-    // Safety check for process.env
-    const apiKey = (typeof process !== 'undefined' && process.env && process.env.API_KEY) 
-      ? process.env.API_KEY 
-      : ''; 
+    const apiKey = getSafeApiKey();
+    if (!apiKey) {
+      console.warn("API Key bulunamadı! Lütfen .env dosyasını veya Vercel Environment Variables ayarlarını kontrol edin.");
+    }
     aiInstance = new GoogleGenAI({ apiKey });
   }
   return aiInstance;
@@ -24,10 +56,12 @@ const COMMON_CONFIG = {
 };
 
 const cleanJsonString = (str: string) => {
+  if (!str) return "{}";
   let cleaned = str.replace(/```json/g, '').replace(/```/g, '').trim();
   const firstBrace = cleaned.indexOf('{');
   const firstBracket = cleaned.indexOf('[');
   let start = -1;
+  
   if (firstBrace !== -1 && firstBracket !== -1) start = Math.min(firstBrace, firstBracket);
   else if (firstBrace !== -1) start = firstBrace;
   else start = firstBracket;
