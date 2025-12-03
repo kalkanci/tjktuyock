@@ -117,7 +117,7 @@ const MobileNavItem = ({ icon, label, active = false, onClick }: { icon: React.R
         ? 'bg-racing-900/95 border-racing-700 text-blue-400 translate-y-[-4px] shadow-blue-500/20' 
         : 'bg-racing-900/80 border-racing-800/50 text-gray-500 hover:bg-racing-800 hover:border-racing-700'}`}
   >
-    {React.cloneElement(icon as React.ReactElement<{ size?: number | string }>, { size: 22, strokeWidth: active ? 2.5 : 2 })}
+    {React.cloneElement(icon as React.ReactElement<{ size?: number | string; strokeWidth?: number }>, { size: 22, strokeWidth: active ? 2.5 : 2 })}
     <span className="text-[10px] mt-1.5 font-bold tracking-wide">{label}</span>
   </button>
 );

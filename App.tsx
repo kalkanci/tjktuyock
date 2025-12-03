@@ -66,8 +66,9 @@ const App: React.FC = () => {
         if (currentPage === 'bulletin' || currentPage === 'coupon-creator') setBulletinState(prev => ({ ...prev, error: errorMsg }));
         else setResultsState(prev => ({ ...prev, error: errorMsg }));
       }
-    } catch (error) {
-       const errorMsg = "Şehir listesi alınamadı.";
+    } catch (error: any) {
+       // Hata mesajını servisten gelen detayla göster
+       const errorMsg = error.message || "Şehir listesi alınamadı.";
        if (currentPage === 'bulletin' || currentPage === 'coupon-creator') setBulletinState(prev => ({ ...prev, error: errorMsg }));
        else setResultsState(prev => ({ ...prev, error: errorMsg }));
     } finally {
@@ -165,7 +166,10 @@ const App: React.FC = () => {
         {currentState.error && (
           <div className="bg-red-900/20 border border-red-500/30 text-red-200 p-4 rounded-xl flex items-center gap-3 mb-6 animate-fade-in">
             <AlertTriangle className="shrink-0" />
-            <p>{currentState.error}</p>
+            <div>
+              <p className="font-bold">Bir Hata Oluştu</p>
+              <p className="text-sm opacity-80">{currentState.error}</p>
+            </div>
           </div>
         )}
 
