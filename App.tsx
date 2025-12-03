@@ -5,7 +5,7 @@ import { RaceCard } from './components/RaceCard';
 import { LoadingOverlay, LoadingType } from './components/LoadingOverlay';
 import { analyzeRaces, getDailyCities, getRaceResults } from './services/geminiService';
 import { AnalysisState, Page } from './types';
-import { AlertTriangle, ExternalLink, Filter, Info, ChevronRight } from 'lucide-react';
+import { AlertTriangle, ExternalLink, Filter, Info, ChevronRight, RefreshCw } from 'lucide-react';
 import { DashboardChart } from './components/DashboardChart';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { CouponCreator } from './components/CouponCreator';
@@ -67,7 +67,6 @@ const App: React.FC = () => {
         else setResultsState(prev => ({ ...prev, error: errorMsg }));
       }
     } catch (error: any) {
-       // Hata mesajını servisten gelen detayla göster
        const errorMsg = error.message || "Şehir listesi alınamadı.";
        if (currentPage === 'bulletin' || currentPage === 'coupon-creator') setBulletinState(prev => ({ ...prev, error: errorMsg }));
        else setResultsState(prev => ({ ...prev, error: errorMsg }));
@@ -164,12 +163,23 @@ const App: React.FC = () => {
 
         {/* Error Display */}
         {currentState.error && (
-          <div className="bg-red-900/20 border border-red-500/30 text-red-200 p-4 rounded-xl flex items-center gap-3 mb-6 animate-fade-in">
-            <AlertTriangle className="shrink-0" />
-            <div>
-              <p className="font-bold">Bir Hata Oluştu</p>
-              <p className="text-sm opacity-80">{currentState.error}</p>
+          <div className="bg-red-900/20 border border-red-500/30 text-red-200 p-4 rounded-xl flex items-center justify-between gap-3 mb-6 animate-fade-in">
+            <div className="flex items-center gap-3">
+              <AlertTriangle className="shrink-0 text-red-400" />
+              <div>
+                <p className="font-bold text-sm">Bir Sorun Oluştu</p>
+                <p className="text-xs opacity-80">{currentState.error}</p>
+              </div>
             </div>
+            {selectedCity && (
+              <button 
+                onClick={() => handleCitySelect(selectedCity)}
+                className="bg-red-800/50 hover:bg-red-800 px-3 py-2 rounded-lg text-xs font-bold transition-colors flex items-center gap-1"
+              >
+                <RefreshCw size={12} />
+                Tekrar Dene
+              </button>
+            )}
           </div>
         )}
 
@@ -244,7 +254,11 @@ const App: React.FC = () => {
 
                   {/* Race Grid */}
                   {filteredRaces.length === 0 ? (
-                    <div className="text-center py-8 text-gray-500">Seçili koşu bulunamadı.</div>
+                    <div className="text-center py-8 text-gray-500">
+                        {currentState.data.races.length === 0 
+                           ? "Bu bülten için detaylı koşu verisi bulunamadı." 
+                           : "Seçili koşu bulunamadı."}
+                    </div>
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-4">
                       {filteredRaces.map((race) => (
