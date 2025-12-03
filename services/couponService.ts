@@ -17,6 +17,9 @@ export const generateAdvancedCoupon = (
   let legs: CouponLeg[] = [];
   let combinations = 1;
 
+  // Koşu listesini güvenli bir şekilde al
+  const races = program.races;
+
   // --- ÇOK AYAKLI OYUNLAR ---
   if (['6G', '5G', '4G', '3G'].includes(betType)) {
     let legCount = 6;
@@ -25,29 +28,40 @@ export const generateAdvancedCoupon = (
     if (betType === '3G') legCount = 3;
 
     // Yeterli koşu var mı kontrol et
-    if (program.races.length < startRaceIndex + legCount) {
-      return null; // Yeterli koşu yok
+    if (races.length < startRaceIndex + legCount) {
+      // Eğer veri eksik geldiyse (API hatası vb.), mevcut olan kadarını yapmaya çalış
+      // Ama kullanıcı deneyimi için null dönmektense, mevcut koşularla işlem yapalım
+      // return null; 
+      legCount = Math.min(legCount, races.length - startRaceIndex);
     }
 
-    const targetRaces = program.races.slice(startRaceIndex, startRaceIndex + legCount);
+    const targetRaces = races.slice(startRaceIndex, startRaceIndex + legCount);
 
     legs = targetRaces.map((race) => {
+      // Sadece puana göre değil, biraz çeşitlilik katmak için mantık
       const sortedHorses = [...race.horses].sort((a, b) => b.power_score - a.power_score);
       
       let selectedHorses: number[] = [];
       let isBanko = false;
 
-      // Basit Mantık:
-      // Banko: Puanı 90+ ve farkı 10+
-      if (sortedHorses[0].power_score > 90 && (sortedHorses.length < 2 || (sortedHorses[0].power_score - sortedHorses[1].power_score > 10))) {
-        selectedHorses = [sortedHorses[0].no];
+      // Puanlar çok yakınsa veya veri yetersizse çeşitlendir
+      // Banko: 1. atın puanı 90+ ve 2. ata 8 puan fark atmışsa
+      const firstHorse = sortedHorses[0];
+      const secondHorse = sortedHorses[1];
+
+      if (firstHorse && firstHorse.power_score > 88 && (!secondHorse || (firstHorse.power_score - secondHorse.power_score > 8))) {
+        selectedHorses = [firstHorse.no];
         isBanko = true;
-      } else if (sortedHorses[0].power_score > 85) {
-        // Güçlü favori ama yanına 1-2 at
-        selectedHorses = sortedHorses.slice(0, 3).map(h => h.no);
       } else {
-        // Karışık ayak, 4-5 at
-        selectedHorses = sortedHorses.slice(0, 5).map(h => h.no);
+        // Karışık ayak: İlk 4-5 atı al
+        // Eğer at sayısı azsa (örn 4 at koşuyorsa) hepsini yazma
+        const pickCount = Math.min(sortedHorses.length, 4);
+        selectedHorses = sortedHorses.slice(0, pickCount).map(h => h.no);
+        
+        // Sürpriz ekle: Bazen 6. veya 7. attan da ekle (Puanı 50 üstüyse)
+        if (sortedHorses.length > 5 && sortedHorses[5].power_score > 60) {
+            selectedHorses.push(sortedHorses[5].no);
+        }
       }
 
       return {
@@ -61,37 +75,46 @@ export const generateAdvancedCoupon = (
     combinations = legs.reduce((acc, leg) => acc * leg.selectedHorses.length, 1);
   }
 
-  // --- TEK KOŞULUK OYUNLAR ---
+  // --- TEK KOŞULUK OYUNLAR (TABELA, IKILI VS) ---
   else {
-    const race = program.races.find(r => r.id === targetRaceId);
+    const race = races.find(r => r.id === targetRaceId);
     if (!race) return null;
     
+    // Güç puanına göre sırala
     const sortedHorses = [...race.horses].sort((a, b) => b.power_score - a.power_score);
     
-    // IKILI & SIRALI: İlk 2-3 atı seçer
+    if (sortedHorses.length === 0) return null;
+
+    // IKILI & SIRALI: İlk 2 favori + 1 plase
     if (betType === 'IKILI' || betType === 'SIRALI' || betType === 'CIFTE') {
-        // En güçlü 3 atı seçip kombinasyon yapalım
-        const top3 = sortedHorses.slice(0, 3).map(h => h.no).sort((a,b) => a-b);
+        const picks = sortedHorses.slice(0, 3).map(h => h.no);
         legs = [{
             raceId: race.id,
             raceNo: race.id,
-            selectedHorses: top3,
+            selectedHorses: picks.sort((a,b) => a-b),
             isBanko: false
         }];
-        // Kombinasyon hesabı yaklaşık: 3 atın ikili kombinasyonu 3'tür.
-        combinations = 3; 
+        combinations = 6; // Tahmini kombinasyon (İkili için)
     }
-    // TABELA (İlk 4): İlk 5-6 atı seçer
+    // TABELA (İlk 4): İlk 5 favori + 1 sürpriz
     else if (betType === 'TABELA') {
-        const top5 = sortedHorses.slice(0, 5).map(h => h.no).sort((a,b) => a-b);
+        // İlk 5 favoriyi al
+        const picks = sortedHorses.slice(0, 5).map(h => h.no);
+        
+        // Eğer 1-2-3-4-5 ardışık geliyorsa ve atların gerçek numaraları bunlarsa yapacak bir şey yok,
+        // ama yapay zeka halüsinasyonu ise prompt düzeltildi.
+        // Yine de bir sürpriz at ekleyelim (Listenin ortasından)
+        if (sortedHorses.length > 6) {
+             picks.push(sortedHorses[6].no);
+        }
+
         legs = [{
             raceId: race.id,
             raceNo: race.id,
-            selectedHorses: top5,
+            selectedHorses: picks.sort((a,b) => a-b),
             isBanko: false
         }];
-        // 5 atlı tabela kombinasyonu (sırasız kabul edersek basitleştirme)
-        combinations = 5; // Temsili
+        combinations = 12; // Tabela kombine temsili
     }
   }
 
@@ -99,7 +122,7 @@ export const generateAdvancedCoupon = (
     type: betType,
     legs,
     totalCombinations: combinations,
-    estimatedCost: combinations * UNIT_PRICE,
+    estimatedCost: Math.max(combinations * UNIT_PRICE, 1), // En az 1 TL
     strategy: 'dengeli',
     raceIndexStart: startRaceIndex,
     targetRaceId: targetRaceId

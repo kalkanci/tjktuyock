@@ -68,9 +68,10 @@ const getAI = () => {
 const modelId = "gemini-2.5-flash";
 
 const COMMON_CONFIG = {
-  temperature: 0.3,
+  temperature: 0.2, // Daha tutarlı veri için düşürüldü
   topK: 40,
   topP: 0.95,
+  maxOutputTokens: 8192, // Tüm programı çekebilmek için limit artırıldı
 };
 
 const cleanJsonString = (str: string) => {
@@ -122,37 +123,53 @@ export const analyzeRaces = async (city: string, dateStr: string): Promise<Daily
     if (!hasValidApiKey()) throw new Error("API Anahtarı bulunamadı.");
 
     const prompt = `
-    ROL: Uzman At Yarışı Analisti.
-    GÖREV: ${dateStr} - ${city} yarış programını analiz et.
-    ÇIKTI: SADECE JSON formatında veri.
+    ROL: Uzman TJK At Yarışı Analisti.
+    GÖREV: ${dateStr} tarihli ${city} hipodromundaki yarış programını eksiksiz analiz et.
+    
+    KURALLAR:
+    1. O gün kaç koşu varsa (Örn: 9 koşu) HEPSİNİ JSON'a ekle. Asla 3-4 koşudan sonra kesme.
+    2. "no" alanı atın GERÇEK SIRT NUMARASI olmalı. (Asla 1'den başlayıp sıralı gitme, gerçek bültendeki numarayı yaz).
+    3. "power_score" (Güç Puanı) alanını, favori atlar için 85-100 arası, sürprizler için 50-80 arası gerçekçi verilerle doldur. Asla tüm atlara 1,2,3 diye sıra verme.
+    4. Her koşu için en az 6-7 at listele.
+    5. Geriye SADECE saf JSON döndür. Markdown kullanma.
     
     JSON ŞEMASI:
     {
       "city": "${city}",
       "date": "${dateStr}",
-      "summary": "Kısa genel değerlendirme",
+      "summary": "Programın genel zorluk derecesi ve öne çıkan jokeyler hakkında kısa bilgi.",
       "races": [
         {
           "id": 1,
-          "time": "14:00",
-          "name": "Yarış Adı",
-          "distance": "Mesafe",
-          "trackType": "Pist",
+          "time": "13:30",
+          "name": "ŞARTLI-3",
+          "distance": "1400m",
+          "trackType": "Kum",
           "horses": [
-            { "no": 1, "name": "AT ADI", "jockey": "Jokey", "weight": "Kilo", "power_score": 90 }
+            { "no": 4, "name": "BOLD PILOT", "jockey": "H.KARATAŞ", "weight": "60", "power_score": 95, "risk_level": "düşük" },
+            { "no": 8, "name": "GRAND EKINOKS", "jockey": "S.BOYRAZ", "weight": "58", "power_score": 88, "risk_level": "orta" }
           ]
-        }
+        },
+        ... (TÜM KOŞULAR BURAYA EKLENECEK)
       ]
     }
     `;
 
+    // Daha uzun yanıtlar için output token limitini artırmamız gerekebilir ama
+    // standart config genellikle yeterlidir. Prompt'u güçlendirmek en iyisi.
     const response = await ai.models.generateContent({
       model: modelId,
       contents: prompt,
-      config: { ...COMMON_CONFIG, tools: [{ googleSearch: {} }] }
+      config: { 
+        ...COMMON_CONFIG, 
+        tools: [{ googleSearch: {} }],
+        // responseMimeType: "application/json" // Bazen bu hata verebilir, plain text alıp parse etmek daha güvenli
+      }
     });
 
     if (!response.text) throw new Error("AI yanıtı boş.");
+
+    console.log("AI Response Length:", response.text.length); // Debug için
 
     const data = JSON.parse(cleanJsonString(response.text));
     
@@ -165,7 +182,7 @@ export const analyzeRaces = async (city: string, dateStr: string): Promise<Daily
     return data;
   } catch (error: any) {
     console.error("Analiz hatası:", error);
-    throw new Error(error.message || "Analiz sırasında hata oluştu.");
+    throw new Error(error.message || "Analiz sırasında hata oluştu. Lütfen tekrar deneyin.");
   }
 };
 
@@ -176,7 +193,7 @@ export const getRaceResults = async (city: string, dateStr: string): Promise<Dai
 
     const prompt = `
     GÖREV: ${dateStr} - ${city} yarışlarının RESMİ SONUÇLARINI JSON olarak getir.
-    Atların ganyanlarını ve derecelerini mutlaka ekle.
+    Atların ganyanlarını ve derecelerini mutlaka ekle. Tüm koşuları getir.
     `;
 
     const response = await ai.models.generateContent({
