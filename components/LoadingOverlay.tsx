@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Loader2, Server, Globe, Cpu } from 'lucide-react';
+import { Loader2, Server, Database, Search, CheckCircle2 } from 'lucide-react';
 
 export type LoadingType = 'cities' | 'analysis' | 'results' | null;
 
@@ -8,106 +8,98 @@ interface LoadingOverlayProps {
 }
 
 export const LoadingOverlay: React.FC<LoadingOverlayProps> = ({ type }) => {
-  const [messageIndex, setMessageIndex] = useState(0);
+  const [logLines, setLogLines] = useState<string[]>([]);
+  const [currentStep, setCurrentStep] = useState(0);
 
-  // Deep Scan Steps
-  const steps: Record<string, string[]> = {
-    cities: [
-      "TJK.org yarış takvimi kontrol ediliyor...",
-      "Güncel hipodrom bilgileri alınıyor...",
-    ],
-    analysis: [
-      "Resmi TJK bülteni taranıyor (Bu işlem detaylıdır)...",
-      "Tüm koşular (1-10) tek tek inceleniyor...",
-      "Atların güncel form durumları ve jokey bilgileri çekiliyor...",
-      "İnternet üzerindeki uzman yorumları analiz ediliyor...",
-      "Yapay zeka puanlaması ve risk hesabı yapılıyor...",
-      "Son kontroller sağlanıyor, lütfen bekleyin..."
-    ],
-    results: [
-      "Sonuç veritabanına bağlanılıyor...",
-      "Resmi sonuçlar doğrulanıyor...",
-      "Tablo oluşturuluyor..."
-    ]
-  };
+  // Basit liste çekimi için kısa adımlar
+  const analysisSteps = [
+    "TJK.org Resmi Veritabanına Bağlanılıyor...",
+    "Günlük Yarış Programı İndiriliyor...",
+    "At ve Jokey Listeleri Düzenleniyor...",
+    "Liste Hazırlanıyor..."
+  ];
+
+  const citySteps = [
+    "Tarih Bilgisi Doğrulanıyor...",
+    "Aktif Hipodromlar Sorgulanıyor..."
+  ];
+
+  const resultSteps = [
+    "Sonuç Servisine Bağlanılıyor...",
+    "Resmi Sonuçlar Doğrulanıyor..."
+  ];
 
   useEffect(() => {
-    if (!type) return;
-    setMessageIndex(0);
+    if (!type) {
+      setLogLines([]);
+      setCurrentStep(0);
+      return;
+    }
 
-    // Mesaj geçiş süresini biraz uzattık (3 saniye) çünkü işlem uzun sürebilir
+    let steps = analysisSteps;
+    if (type === 'cities') steps = citySteps;
+    if (type === 'results') steps = resultSteps;
+
+    // Reset
+    setLogLines([steps[0]]);
+    setCurrentStep(0);
+
+    // Initial fetch is much faster now (approx 4 sec)
+    const totalDuration = type === 'analysis' ? 4000 : 3000; 
+    const stepDuration = totalDuration / steps.length;
+
     const interval = setInterval(() => {
-      setMessageIndex((prev) => {
-        const max = steps[type].length - 1;
-        return prev < max ? prev + 1 : prev;
+      setCurrentStep((prev) => {
+        const next = prev + 1;
+        if (next < steps.length) {
+          setLogLines(old => [...old.slice(-3), steps[next]]); 
+          return next;
+        }
+        return prev;
       });
-    }, 3000);
+    }, stepDuration);
 
     return () => clearInterval(interval);
   }, [type]);
 
   if (!type) return null;
 
-  const currentMessages = steps[type];
-  const activeMessage = currentMessages[messageIndex];
-
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-fade-in">
-      <div className="bg-racing-900 border border-racing-700 rounded-2xl p-8 max-w-sm w-full shadow-2xl relative overflow-hidden">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 backdrop-blur-md p-4 animate-fade-in font-mono">
+      <div className="bg-racing-900 border border-racing-700 rounded-xl max-w-md w-full shadow-2xl overflow-hidden flex flex-col">
         
-        {/* Background Accents */}
-        <div className="absolute top-0 right-0 w-40 h-40 bg-racing-accent/10 rounded-full -mr-20 -mt-20 blur-2xl animate-pulse"></div>
-        <div className="absolute bottom-0 left-0 w-32 h-32 bg-blue-600/10 rounded-full -ml-16 -mb-16 blur-2xl animate-pulse"></div>
-
-        <div className="flex flex-col items-center text-center relative z-10">
-          
-          {/* Animated Icon */}
-          <div className="relative mb-6">
-            <div className="absolute inset-0 bg-racing-accent/20 rounded-full blur-xl animate-pulse"></div>
-            <div className="bg-black p-5 rounded-full border border-racing-600 relative shadow-inner">
-              <Loader2 className="w-10 h-10 text-racing-accent animate-spin duration-1000" />
-            </div>
-            
-            <div className="absolute -right-2 -top-2 bg-racing-800 p-1.5 rounded-full border border-racing-700 text-racing-gold animate-bounce" style={{ animationDelay: '0.5s' }}>
-              <Globe size={14} />
-            </div>
-            <div className="absolute -left-2 -bottom-2 bg-racing-800 p-1.5 rounded-full border border-racing-700 text-blue-400 animate-bounce" style={{ animationDelay: '1s' }}>
-              <Server size={14} />
-            </div>
+        {/* Header */}
+        <div className="bg-racing-950 p-4 border-b border-racing-800 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+             <div className="relative">
+               <div className="absolute inset-0 bg-racing-accent/50 blur-lg rounded-full animate-pulse"></div>
+               <Loader2 className="w-5 h-5 text-racing-accent animate-spin relative z-10" />
+             </div>
+             <span className="text-white font-bold text-sm tracking-wider">VERİ AKTARIMI</span>
           </div>
+        </div>
 
-          <h3 className="text-xl font-bold text-white mb-2">Detaylı Tarama Yapılıyor</h3>
-          
-          {/* Dynamic Message Area */}
-          <div className="h-14 flex items-center justify-center w-full px-2">
-            <p className="text-sm text-gray-300 font-mono leading-relaxed">
-              {activeMessage}
-            </p>
-          </div>
-
-          {/* Progress Bar Simulation */}
-          <div className="w-full bg-racing-950 h-2 rounded-full mt-6 overflow-hidden border border-racing-800">
-            <div 
-              className="h-full bg-gradient-to-r from-racing-accent via-blue-500 to-racing-accent bg-[length:200%_100%] animate-[shimmer_2s_infinite]"
-              style={{ width: `${((messageIndex + 1) / currentMessages.length) * 100}%` }}
-            ></div>
-          </div>
-          
-          <div className="mt-5 flex items-center gap-2 text-[10px] text-gray-500 uppercase tracking-widest border px-3 py-1 rounded-full border-racing-800 bg-racing-950/50">
-            <Cpu size={12} />
-            <span>Gerçek Veri Modu Aktif</span>
-          </div>
-
+        {/* Console View */}
+        <div className="p-6 bg-black/50 min-h-[150px] flex flex-col justify-end space-y-3 font-mono text-xs">
+           {logLines.map((line, idx) => (
+             <div key={idx} className="flex items-center gap-3 animate-slide-up text-gray-300">
+                {idx === logLines.length - 1 ? (
+                  <Search size={14} className="text-racing-gold shrink-0 animate-pulse" />
+                ) : (
+                  <CheckCircle2 size={14} className="text-racing-accent shrink-0" />
+                )}
+                <span className={idx === logLines.length - 1 ? "text-white font-bold" : "opacity-70"}>
+                  {line}
+                </span>
+             </div>
+           ))}
+           {/* Fake Cursor */}
+           <div className="h-4 flex items-center gap-2">
+             <span className="text-racing-accent">{'>'}</span>
+             <span className="w-2 h-4 bg-racing-accent animate-pulse"></span>
+           </div>
         </div>
       </div>
-      
-      {/* Global Style for shimmer animation if not present */}
-      <style>{`
-        @keyframes shimmer {
-          0% { background-position: 100% 0; }
-          100% { background-position: -100% 0; }
-        }
-      `}</style>
     </div>
   );
 };

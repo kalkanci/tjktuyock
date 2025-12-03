@@ -1,12 +1,12 @@
-import React, { useState, useCallback, useMemo } from 'react';
+
+import React, { useState, useCallback, useMemo, useRef } from 'react';
 import { Layout } from './components/Layout';
 import { FilterBar } from './components/FilterBar';
 import { RaceCard } from './components/RaceCard';
 import { LoadingOverlay, LoadingType } from './components/LoadingOverlay';
-import { analyzeRaces, getDailyCities, getRaceResults } from './services/geminiService';
+import { fetchBasicProgram, analyzeSingleRace, getDailyCities, getRaceResults } from './services/geminiService';
 import { AnalysisState, Page } from './types';
-import { AlertTriangle, ExternalLink, Filter, Info, ChevronRight, RefreshCw } from 'lucide-react';
-import { DashboardChart } from './components/DashboardChart';
+import { AlertTriangle, ExternalLink, Filter, RefreshCw, Loader2 } from 'lucide-react';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { CouponCreator } from './components/CouponCreator';
 
@@ -20,6 +20,10 @@ const App: React.FC = () => {
   const [availableCities, setAvailableCities] = useState<string[]>([]);
   const [selectedCity, setSelectedCity] = useState<string | null>(null);
   const [loadingType, setLoadingType] = useState<LoadingType>(null);
+  
+  // Background Analysis State
+  const [analysisProgress, setAnalysisProgress] = useState<{current: number, total: number} | null>(null);
+  const isAnalyzingRef = useRef(false); 
   
   // --- PERSISTENT STATES ---
   const [bulletinState, setBulletinState] = useState<AnalysisState>({
@@ -44,11 +48,12 @@ const App: React.FC = () => {
 
   const handleDateChange = (newDate: string) => {
     setDate(newDate);
-    // Tarih değişince her şeyi sıfırla
     setAvailableCities([]);
     setSelectedCity(null);
     setBulletinState({ loading: false, data: null, error: null });
     setResultsState({ loading: false, data: null, error: null });
+    setAnalysisProgress(null);
+    isAnalyzingRef.current = false;
   };
 
   const handleFindCities = useCallback(async () => {
@@ -75,43 +80,101 @@ const App: React.FC = () => {
     }
   }, [date, currentPage]);
 
+  // SEQUENTIAL ANALYSIS FUNCTION
+  const startSequentialAnalysis = async (programData: any) => {
+    if (isAnalyzingRef.current) return;
+    isAnalyzingRef.current = true;
+
+    const races = programData.races;
+    setAnalysisProgress({ current: 0, total: races.length });
+
+    // Iterate through races one by one
+    for (let i = 0; i < races.length; i++) {
+        const race = races[i];
+        
+        // Update UI: Mark this race as analyzing
+        setBulletinState(prev => {
+            if (!prev.data) return prev;
+            const updatedRaces = [...prev.data.races];
+            updatedRaces[i] = { ...updatedRaces[i], status: 'analyzing' };
+            return { ...prev, data: { ...prev.data, races: updatedRaces } };
+        });
+
+        // Perform Analysis with DELAY
+        try {
+            // Analiz hissi vermek için kısa bir gecikme (Local motor çok hızlı olduğu için)
+            if (i > 0) await new Promise(res => setTimeout(res, 500));
+
+            const analyzedRace = await analyzeSingleRace(race, programData.city);
+            
+            // Update UI: Mark as completed and save data
+            setBulletinState(prev => {
+                if (!prev.data) return prev;
+                const updatedRaces = [...prev.data.races];
+                updatedRaces[i] = analyzedRace;
+                return { ...prev, data: { ...prev.data, races: updatedRaces } };
+            });
+        } catch (error) {
+            console.error("Race analysis error", error);
+            setBulletinState(prev => {
+                if (!prev.data) return prev;
+                const updatedRaces = [...prev.data.races];
+                updatedRaces[i] = { ...updatedRaces[i], status: 'failed' };
+                return { ...prev, data: { ...prev.data, races: updatedRaces } };
+            });
+        }
+
+        setAnalysisProgress({ current: i + 1, total: races.length });
+    }
+
+    isAnalyzingRef.current = false;
+    setAnalysisProgress(null);
+  };
+
   const handleCitySelect = useCallback(async (city: string) => {
     setSelectedCity(city);
+    isAnalyzingRef.current = false; // Reset lock
     
     const isResultsPage = currentPage === 'results';
-    const activeSetState = isResultsPage ? setResultsState : setBulletinState;
-    const currentState = isResultsPage ? resultsState : bulletinState;
-
-    if (currentState.data && currentState.data.city === city && currentState.data.date === date) {
-      return;
+    
+    if (isResultsPage) {
+        setResultsState(prev => ({ ...prev, loading: true, error: null }));
+        setLoadingType('results');
+        try {
+            const data = await getRaceResults(city, date);
+            setResultsState({ loading: false, data, error: null });
+        } catch (err: any) {
+            setResultsState({ loading: false, data: null, error: err.message });
+        } finally {
+            setLoadingType(null);
+        }
+        return;
     }
 
-    setLoadingType(isResultsPage ? 'results' : 'analysis');
-    activeSetState(prev => ({ ...prev, loading: true, error: null }));
-    
+    // --- BÜLTEN: AŞAMALI YÜKLEME ---
+    setBulletinState(prev => ({ ...prev, loading: true, error: null }));
+    setLoadingType('analysis'); 
+
     try {
-      let data;
-      if (isResultsPage) {
-        data = await getRaceResults(city, date);
-      } else {
-        data = await analyzeRaces(city, date);
-      }
+      const basicData = await fetchBasicProgram(city, date);
       
-      activeSetState({ loading: false, data, error: null });
+      setBulletinState({ loading: false, data: basicData, error: null });
+      setLoadingType(null);
       setSelectedRaceId('all');
+
+      startSequentialAnalysis(basicData);
+      
     } catch (err: any) {
-      activeSetState({
+      setBulletinState({
         loading: false,
         data: null,
-        error: err.message || "Veri alınamadı."
+        error: err.message || "Program verisi alınamadı."
       });
-    } finally {
       setLoadingType(null);
-    }
-  }, [date, currentPage, bulletinState.data, resultsState.data]);
+    } 
 
-  // --- DERIVED STATE ---
-  
+  }, [date, currentPage]);
+
   const currentState = currentPage === 'results' ? resultsState : bulletinState;
   
   const filteredRaces = useMemo(() => {
@@ -123,8 +186,6 @@ const App: React.FC = () => {
     });
   }, [currentState.data, selectedRaceId]);
 
-  // --- RENDER CONTENT ---
-
   const renderContent = () => {
     if (currentPage === 'welcome') {
       return <WelcomeScreen onStart={handleStartApp} />;
@@ -132,24 +193,22 @@ const App: React.FC = () => {
 
     return (
       <>
-        {/* Page Header */}
         <div className="mb-6 flex flex-col md:flex-row md:items-end justify-between gap-2">
           <div>
             <h2 className="text-2xl font-bold text-white mb-1">
-              {currentPage === 'results' ? 'Yarış Sonuçları' : 
-               currentPage === 'coupon-creator' ? 'Kupon Oluşturucu' : 'Günlük Bülten'}
+              {currentPage === 'results' ? 'Simüle Sonuçlar' : 
+               currentPage === 'coupon-creator' ? 'Kupon Oluşturucu' : 'Yerel Analiz Motoru'}
             </h2>
             <p className="text-gray-400 text-sm">
               {currentPage === 'results' 
-                ? 'Geçmiş yarışların resmi sonuçlarını ve ganyanlarını görüntüleyin.' 
+                ? 'Analiz motoruna göre tahmini yarış sonuçları.' 
                 : currentPage === 'coupon-creator'
-                ? 'Analiz verilerine dayalı akıllı kuponlar oluşturun.'
-                : 'Canlı veri taraması ile yapay zeka destekli detaylı analiz.'}
+                ? 'İstatistiksel verilere dayalı akıllı kuponlar.'
+                : 'Dahili Expert System (Uzman Sistem) ile API bağımsız analiz.'}
             </p>
           </div>
         </div>
 
-        {/* Common Filter Bar (Always visible for main pages) */}
         <FilterBar 
           selectedDate={date}
           onDateChange={handleDateChange}
@@ -161,7 +220,6 @@ const App: React.FC = () => {
           loadingAnalysis={!!loadingType}
         />
 
-        {/* Error Display */}
         {currentState.error && (
           <div className="bg-red-900/20 border border-red-500/30 text-red-200 p-4 rounded-xl flex items-center justify-between gap-3 mb-6 animate-fade-in">
             <div className="flex items-center gap-3">
@@ -183,7 +241,25 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {/* Empty State / Prompt */}
+        {analysisProgress && currentPage === 'bulletin' && (
+          <div className="sticky top-20 md:top-4 z-40 mb-4 animate-slide-up">
+            <div className="bg-gradient-to-r from-blue-900/90 to-indigo-900/90 border border-blue-500/50 backdrop-blur-md text-white px-4 py-3 rounded-xl shadow-xl flex items-center justify-between">
+               <div className="flex items-center gap-3">
+                 <div className="relative">
+                   <Loader2 size={20} className="animate-spin text-blue-300" />
+                   <div className="absolute inset-0 bg-blue-400 blur-lg opacity-30 animate-pulse"></div>
+                 </div>
+                 <div>
+                   <p className="font-bold text-sm">Yerel Analiz Sürüyor</p>
+                   <p className="text-[10px] text-blue-200">
+                      {analysisProgress.current} / {analysisProgress.total} koşu hesaplanıyor. İstatistikler işleniyor...
+                   </p>
+                 </div>
+               </div>
+            </div>
+          </div>
+        )}
+
         {!currentState.data && !loadingType && !currentState.error && (
           <div className="text-center py-12 opacity-50">
             <div className="bg-racing-800 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 border-2 border-dashed border-racing-700">
@@ -195,11 +271,9 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {/* Main Content Area */}
         {currentState.data && (
            <div className="animate-fade-in space-y-6 pb-8">
              
-             {/* 1. COUPON CREATOR VIEW */}
              {currentPage === 'coupon-creator' && (
                 <CouponCreator 
                    program={bulletinState.data} 
@@ -207,10 +281,8 @@ const App: React.FC = () => {
                 />
              )}
 
-             {/* 2. BULLETIN & RESULTS VIEW */}
              {currentPage !== 'coupon-creator' && (
                 <>
-                  {/* Summary Box */}
                   <div className="bg-gradient-to-r from-racing-900 to-racing-800 border border-racing-800 p-4 rounded-xl shadow-lg flex flex-col gap-4">
                     <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                         <div>
@@ -222,7 +294,6 @@ const App: React.FC = () => {
                             </p>
                         </div>
                         
-                        {/* Quick Filter */}
                         <div className="min-w-[150px] w-full md:w-auto">
                             <div className="relative">
                               <Filter className="absolute left-2 top-2.5 text-gray-400" size={14} />
@@ -241,17 +312,6 @@ const App: React.FC = () => {
                     </div>
                   </div>
                   
-                  {/* Analysis Chart (Bulletin only) */}
-                  {currentPage === 'bulletin' && selectedRaceId === 'all' && (
-                    <div className="bg-racing-900/50 rounded-xl p-4 border border-racing-800">
-                        <div className="flex items-center gap-2 mb-2">
-                          <Info size={14} className="text-racing-accent" />
-                          <span className="text-xs text-gray-400">Günün en yüksek puanlı atları</span>
-                        </div>
-                        <DashboardChart horses={currentState.data.races?.flatMap(r => r.horses) || []} />
-                    </div>
-                  )}
-
                   {/* Race Grid */}
                   {filteredRaces.length === 0 ? (
                     <div className="text-center py-8 text-gray-500">
@@ -274,18 +334,16 @@ const App: React.FC = () => {
                   {/* Sources Footer */}
                   {currentState.data.sources && currentState.data.sources.length > 0 && (
                     <div className="border-t border-racing-800 pt-4 mt-6">
-                      <p className="text-[10px] text-gray-500 mb-2 uppercase font-bold">İncelenen Kaynaklar:</p>
+                      <p className="text-[10px] text-gray-500 mb-2 uppercase font-bold">Veri Kaynakları:</p>
                       <div className="flex flex-wrap gap-2 justify-center md:justify-start">
                         {currentState.data.sources.map((source, idx) => (
                           <a 
                             key={idx}
                             href={source.uri}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="flex items-center gap-1 text-[10px] bg-racing-900 text-gray-400 hover:text-white px-2 py-1 rounded border border-racing-800 transition-colors"
+                            className="flex items-center gap-1 text-[10px] bg-racing-900 text-gray-400 hover:text-white px-2 py-1 rounded border border-racing-800 transition-colors cursor-default"
                           >
                             <ExternalLink size={8} />
-                            {source.title.length > 25 ? source.title.substring(0, 25) + '...' : source.title}
+                            {source.title}
                           </a>
                         ))}
                       </div>

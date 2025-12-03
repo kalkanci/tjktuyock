@@ -1,3 +1,4 @@
+
 export type Page = 'welcome' | 'bulletin' | 'results' | 'coupon-creator';
 
 export interface Horse {
@@ -6,15 +7,22 @@ export interface Horse {
   jockey?: string;
   weight?: string; // Kilo
   
-  // Analiz Alanları
-  power_score: number; // 0-100 arası güç puanı
-  risk_level?: 'düşük' | 'orta' | 'yüksek';
+  // Analiz Alanları (Eski power_score geriye uyumluluk için tutuluyor ama confidence ile maplenecek)
+  power_score: number; // 0-100 arası güç puanı (confidence * 100)
+  
+  // Yeni Yapay Zeka Analiz Alanları
+  prediction_type?: 'favorite' | 'surprise' | 'normal';
+  confidence?: number; // 0.0 - 1.0 arası
+  analysis_reason?: string; // "Son 3 koşusu iyi..."
+  tags?: string[]; // ["formda", "mesafe uyumlu"]
   
   // Sonuç Alanları
   finish_time?: string; // Derece
   ganyan?: string; // Ganyan
   difference?: string; // Fark (Boy)
 }
+
+export type RaceStatus = 'waiting' | 'analyzing' | 'completed' | 'failed';
 
 export interface Race {
   id: number;
@@ -26,6 +34,7 @@ export interface Race {
   horses: Horse[];
   
   race_summary?: string; // Koşu yorumu
+  status?: RaceStatus; // Analiz durumu
 }
 
 export interface DailyProgram {

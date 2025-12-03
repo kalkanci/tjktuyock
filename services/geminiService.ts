@@ -1,213 +1,272 @@
 import { GoogleGenAI } from "@google/genai";
-import { DailyProgram } from "../types";
+import { DailyProgram, Race, Horse } from "../types";
 
 // --- API CLIENT MANAGEMENT ---
 
 let aiInstance: GoogleGenAI | null = null;
 
-// Helper to safely retrieve API Key from various environment configurations
-const getApiKey = (): string | undefined => {
-  // 1. Standard process.env (Node, Webpack, Next.js, CRA)
-  if (typeof process !== 'undefined' && process.env?.API_KEY) {
-    return process.env.API_KEY;
-  }
-  
-  // 2. Vite / Modern Bundlers (often used in Vercel)
-  try {
-    // @ts-ignore
-    if (typeof import.meta !== 'undefined' && import.meta.env) {
-      // @ts-ignore
-      // Vercel environment variables usually need VITE_ prefix for client-side access in Vite
-      return import.meta.env.VITE_API_KEY || import.meta.env.API_KEY;
-    }
-  } catch (e) {
-    // ignore
-  }
-  
-  return undefined;
-};
-
 const getAI = () => {
   if (aiInstance) return aiInstance;
 
-  const apiKey = getApiKey();
+  // Ortam değişkeninden API anahtarını alıyoruz
+  const apiKey = process.env.API_KEY;
   
   if (!apiKey) {
-    console.error("API Key missing. Checked process.env.API_KEY and import.meta.env.VITE_API_KEY");
-    throw new Error("API Anahtarı bulunamadı. Vercel'de 'VITE_API_KEY' tanımlı olduğundan emin olun.");
+    console.error("API Key missing. process.env.API_KEY is not defined.");
+    throw new Error("API Anahtarı bulunamadı. Gerçek veri çekmek için API anahtarı gereklidir.");
   }
 
   aiInstance = new GoogleGenAI({ apiKey });
   return aiInstance;
 };
 
-const modelId = "gemini-2.5-flash"; 
-
-const COMMON_CONFIG = {
-  temperature: 0.0, // KESİN VERİ: Yaratıcılık tamamen kapatıldı. Sadece gerçek veri.
-  topK: 40,
-  topP: 0.95,
-  maxOutputTokens: 8192, // Maksimum çıktı uzunluğu (Tüm koşular sığsın diye)
-};
+// Gerçek zamanlı arama ve hız için Flash modeli
+const MODEL_ID = "gemini-2.5-flash"; 
 
 const cleanJsonString = (str: string) => {
   if (!str) return "{}";
+  // Markdown code block temizliği
   let cleaned = str.replace(/```json/g, "").replace(/```/g, "");
   
+  // İlk '{' veya '[' karakterini bul
   const start = cleaned.search(/[{[]/);
+  // Son '}' veya ']' karakterini bul
   const end = Math.max(cleaned.lastIndexOf('}'), cleaned.lastIndexOf(']'));
   
   if (start !== -1 && end !== -1 && end > start) {
     cleaned = cleaned.substring(start, end + 1);
   }
+  
   return cleaned.trim();
 };
 
-// --- API FONKSİYONLARI ---
+/**
+ * Gemini API Çağrısı (Retry Mekanizmalı)
+ */
+const generateContentWithRetry = async (prompt: string, retries = 1) => {
+    const ai = getAI();
+    let lastError: any;
+    
+    for (let i = 0; i <= retries; i++) {
+        try {
+            // Google Search Tool aktif ediyoruz - Gerçek veri için kritik
+            const response = await ai.models.generateContent({
+                model: MODEL_ID,
+                contents: prompt,
+                config: { 
+                    temperature: 0.2, // Daha tutarlı sonuçlar için düşük sıcaklık
+                    tools: [{ googleSearch: {} }] // İNTERNET ERİŞİMİ
+                }
+            });
+            return response;
+        } catch (e: any) {
+            console.warn(`Gemini API Request failed (Attempt ${i + 1}):`, e.message);
+            lastError = e;
+            await new Promise(res => setTimeout(res, 1500)); // Bekleme süresi
+        }
+    }
+    throw lastError;
+};
+
+// --- SERVİS FONKSİYONLARI ---
 
 export const getDailyCities = async (dateStr: string): Promise<string[]> => {
   try {
-    const ai = getAI();
-    
     const prompt = `
-    TASK: Search for official Turkish Jockey Club (TJK) race schedule for ${dateStr}.
-    GOAL: List cities hosting races today.
+    GÖREV: Bugün (${dateStr}) Türkiye'de TJK tarafından düzenlenen resmi at yarışlarının olduğu şehirleri bul.
     
-    OUTPUT: JSON Array of strings. e.g. ["İstanbul", "Kocaeli"].
-    Use Google Search to verify exact dates. If no races, return [].
+    SADECE JSON DİZİSİ DÖNDÜR:
+    ["Şehir1", "Şehir2"]
+    
+    Eğer yarış yoksa boş dizi [] döndür. Başka hiçbir metin yazma.
     `;
 
-    const response = await ai.models.generateContent({
-      model: modelId,
-      contents: prompt,
-      config: { ...COMMON_CONFIG, tools: [{ googleSearch: {} }] }
-    });
-
+    const response = await generateContentWithRetry(prompt);
+    
     if (response.text) {
       const cleaned = cleanJsonString(response.text);
       try {
         const parsed = JSON.parse(cleaned);
         return Array.isArray(parsed) ? parsed : [];
-      } catch (parseError) {
+      } catch (e) {
+        console.warn("City parse failed", e);
         return [];
       }
     }
     return [];
   } catch (error: any) {
     console.error("Şehir verisi hatası:", error);
-    throw new Error("Şehir listesi alınamadı: " + (error.message || "Bilinmeyen hata"));
+    return []; // Hata durumunda boş dön
   }
 };
 
-export const analyzeRaces = async (city: string, dateStr: string): Promise<DailyProgram> => {
+/**
+ * PROGRAM ÇEKME (ATLAR DAHİL)
+ */
+export const fetchBasicProgram = async (city: string, dateStr: string): Promise<DailyProgram> => {
   try {
-    const ai = getAI();
-    
-    // Prompt "Derinlemesine Tarama" moduna geçirildi.
     const prompt = `
-    MODE: OFFICIAL DATA SCRAPING (STRICT)
-    TARGET: Retrieve the COMPLETE TJK race program for ${city} on ${dateStr}.
+    GÖREV: ${dateStr} tarihinde ${city} hipodromundaki RESMİ TJK yarış programını bul.
     
-    INSTRUCTIONS:
-    1. PERFORM A DEEP SEARCH: Use Google Search to find the official "TJK Yarış Programı" or reliable sources like "Nalkapon", "Liderform", "Fanatik" for this specific date and city.
+    ÖNEMLİ: Gerçek verileri kullan. Asla uydurma veri yazma.
     
-    2. RETRIEVE ALL RACES (CRITICAL): 
-       - A typical racing day has between 6 to 10 races.
-       - You MUST extract EVERY SINGLE RACE (Koşu 1, Koşu 2, ... up to the last one).
-       - DO NOT Summarize. DO NOT stop after 2 races.
-       - If there are 9 races, your JSON must contain 9 objects in the "races" array.
-    
-    3. DATA ACCURACY:
-       - Use ONLY real data found in the search. Do not guess.
-       - For Horses: Get the exact "Sırt No" (Horse Number), "At İsmi" (Name), "Jokey" (Jockey), "Kilo" (Weight).
-       - For Race Info: Get exact Time, Distance (m), and Track Type (Çim/Kum/Sentetik).
-    
-    4. ANALYSIS (Power Score):
-       - Assign a 'power_score' (0-100) to each horse based on AGF (Altılı Ganyan Favorisi) rankings found in search. 
-       - Favori 1: 90-100 pts, Favori 2: 80-90 pts... Sürpriz: <60 pts.
-    
-    OUTPUT FORMAT (JSON ONLY):
+    İSTENEN FORMAT (JSON):
     {
       "city": "${city}",
       "date": "${dateStr}",
-      "summary": "Summarize the program (e.g., 'Today there are 9 races in ${city} starting at...'). Mention the favorites.",
+      "summary": "${city} programı detayları aşağıdadır.",
       "races": [
         {
           "id": 1,
-          "time": "HH:MM", 
-          "name": "ŞARTLI-1",
-          "distance": "1200m",
-          "trackType": "Kum",
+          "time": "Saat (Örn: 14:30)", 
+          "name": "Yarış Adı (Örn: Maiden/DHÖW)",
+          "distance": "Mesafe (Örn: 1400m)",
+          "trackType": "Pist (Kum/Çim/Sentetik)",
           "horses": [
-            { "no": 1, "name": "REAL NAME", "jockey": "REAL JOCKEY", "weight": "58", "power_score": 95, "risk_level": "düşük" },
-            ... (List ALL horses in this race)
+             { "no": 1, "name": "AT ADI", "jockey": "Jokey Adı", "weight": "58", "power_score": 0 }
           ]
-        },
-        ... (Repeat for ALL races. Do not skip any.)
+        }
       ]
     }
+    
+    KURALLAR:
+    1. Her yarış için en az 5-6 at ismini bulmaya çalış.
+    2. At isimleri GERÇEK olmalı.
+    3. JSON dışında hiçbir şey yazma.
     `;
 
-    const response = await ai.models.generateContent({
-      model: modelId,
-      contents: prompt,
-      config: { 
-        ...COMMON_CONFIG, 
-        // Google Search aracı veri doğruluğu için zorunlu
-        tools: [{ googleSearch: {} }]
-      }
-    });
+    const response = await generateContentWithRetry(prompt);
 
-    if (!response.text) {
-        throw new Error("Yapay zeka veri oluşturamadı. Lütfen tekrar deneyin.");
-    }
+    if (!response.text) throw new Error("Program verisi boş geldi.");
 
-    const data = JSON.parse(cleanJsonString(response.text));
-    
-    // Kaynakları ekle
+    const cleaned = cleanJsonString(response.text);
+    const data = JSON.parse(cleaned);
+
+    // Kaynakları ekle (Grounding Metadata)
     const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
     data.sources = chunks
       .filter((c: any) => c.web?.uri && c.web?.title)
       .map((c: any) => ({ title: c.web.title, uri: c.web.uri }))
       .slice(0, 4);
     
-    // Boş veri kontrolü
-    if (!data.races || !Array.isArray(data.races)) {
-        data.races = [];
+    // Status düzeltme
+    if (data.races) {
+        data.races = data.races.map((r: any) => ({ 
+            ...r, 
+            status: 'waiting'
+        }));
     }
-    
-    // Eğer az koşu geldiyse (örn: 2 tane), kullanıcıya uyarı eklenebilir ama şu an sessizce dönüyoruz.
-    // Prompt'un gücü ile hepsini almaya çalışacağız.
 
     return data;
   } catch (error: any) {
-    console.error("Analiz hatası:", error);
-    let msg = error.message || "Analiz yapılamadı.";
-    if (msg.includes("JSON")) msg = "Veri işlenirken hata oluştu (JSON Parse).";
-    throw new Error(msg);
+    console.error("Program çekme hatası:", error);
+    throw new Error("Gerçek yarış programı alınamadı: " + error.message);
+  }
+};
+
+/**
+ * DETAYLI ANALİZ
+ */
+export const analyzeSingleRace = async (race: Race, city: string): Promise<Race> => {
+  try {
+    // Veri tasarrufu için sadece at isimlerini gönderiyoruz
+    const horseNames = race.horses.map(h => `${h.no}-${h.name}`).join(", ");
+    
+    const prompt = `
+    GÖREV: ${city} ${race.id}. Koşu için detaylı at yarışı analizi yap.
+    KOŞU BİLGİSİ: ${race.distance} ${race.trackType}.
+    ATLAR: ${horseNames}
+    
+    TALİMATLAR:
+    1. Bu atların son yarışlarını ve form durumlarını Google'dan araştır.
+    2. Buna göre Favori (Kazanmaya yakın), Plase (Sürpriz) ve Normal atları belirle.
+    3. Her ata 0-100 arası bir "power_score" ver. (Favoriler 85+, Sürprizler 70+)
+    
+    ÇIKTI (JSON):
+    {
+      "raceId": ${race.id},
+      "analysisResult": [
+        { 
+           "no": 1, 
+           "prediction_type": "favorite", 
+           "power_score": 90, 
+           "confidence": 0.9,
+           "analysis_reason": "Son yarışını çok rahat kazandı, formda.",
+           "tags": ["Favori", "Formda"]
+        }
+      ],
+      "race_summary": "Yarışın genel yorumu (Kısa)."
+    }
+    
+    Sadece JSON döndür.
+    `;
+
+    const response = await generateContentWithRetry(prompt);
+
+    if (!response.text) return { ...race, status: 'failed' };
+
+    const cleaned = cleanJsonString(response.text);
+    const result = JSON.parse(cleaned);
+    const analysisMap = result.analysisResult || [];
+
+    // Mevcut at listesini analiz verileriyle güncelle
+    const updatedHorses: Horse[] = race.horses.map((horse) => {
+        const analysis = analysisMap.find((a: any) => a.no === horse.no);
+        
+        if (analysis) {
+            return {
+                ...horse,
+                power_score: analysis.power_score || 50,
+                prediction_type: (analysis.prediction_type as 'favorite' | 'surprise' | 'normal') || 'normal',
+                confidence: analysis.confidence || 0.5,
+                analysis_reason: analysis.analysis_reason || "",
+                tags: analysis.tags || []
+            };
+        }
+        return { ...horse, power_score: 40, prediction_type: 'normal' };
+    });
+
+    return {
+        ...race,
+        horses: updatedHorses,
+        race_summary: result.race_summary || "Analiz tamamlandı.",
+        status: 'completed'
+    };
+
+  } catch (error) {
+    console.error(`Koşu ${race.id} analiz hatası:`, error);
+    // Hata olsa bile yarışı 'completed' işaretle ki UI takılmasın, ama eski veriyi koru
+    return { ...race, status: 'completed', race_summary: "Analiz verisi alınamadı." };
   }
 };
 
 export const getRaceResults = async (city: string, dateStr: string): Promise<DailyProgram> => {
   try {
-    const ai = getAI();
-
     const prompt = `
-    TASK: Find OFFICIAL TJK race results for ${city} on ${dateStr}.
-    OUTPUT: JSON format containing ALL completed races.
-    Include: Winner horse name, Ganyan, Finish time.
+    GÖREV: ${dateStr} tarihinde ${city} hipodromunda koşulan yarışların RESMİ SONUÇLARINI getir.
+    
+    ÇIKTI FORMATI (JSON):
+    {
+      "city": "${city}",
+      "date": "${dateStr}",
+      "summary": "Resmi Sonuçlar",
+      "races": [
+        { 
+           "id": 1, 
+           "horses": [
+              { "no": 1, "name": "KAZANAN AT", "ganyan": "2.50", "finish_time": "1.35.00" }
+           ] 
+        }
+      ]
+    }
     `;
 
-    const response = await ai.models.generateContent({
-      model: modelId,
-      contents: prompt,
-      config: { ...COMMON_CONFIG, tools: [{ googleSearch: {} }] }
-    });
+    const response = await generateContentWithRetry(prompt);
 
-    if (!response.text) throw new Error("Sonuç bulunamadı.");
+    if (!response.text) throw new Error("Sonuç verisi bulunamadı.");
     
-    const data = JSON.parse(cleanJsonString(response.text));
-    return data;
+    const cleaned = cleanJsonString(response.text);
+    return JSON.parse(cleaned);
   } catch (error: any) {
     console.error("Sonuç hatası:", error);
     throw new Error("Sonuç verisi alınamadı.");
