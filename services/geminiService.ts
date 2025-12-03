@@ -2,34 +2,49 @@ import { GoogleGenAI } from "@google/genai";
 import { DailyProgram } from "../types";
 
 // --- GÜVENLİ API KEY YÖNETİMİ ---
-// Not: 'import.meta' kullanımı bazı build araçlarında (eski Webpack vb.) syntax error verip 
-// uygulamanın hiç açılmamasına (siyah ekran) sebep olabilir. Bu yüzden sadece process.env kullanıyoruz.
 const getSafeApiKey = (): string => {
+  let key = '';
+
+  // 1. Vite / Modern Tarayıcı Kontrolü (import.meta)
   try {
-    // process nesnesinin varlığını güvenli bir şekilde kontrol et
-    if (typeof process !== 'undefined' && process.env) {
-      return process.env.API_KEY || 
-             process.env.REACT_APP_API_KEY || 
-             process.env.NEXT_PUBLIC_API_KEY || 
-             '';
+    // @ts-ignore
+    if (typeof import.meta !== 'undefined' && import.meta.env) {
+      // @ts-ignore
+      key = import.meta.env.VITE_API_KEY || import.meta.env.API_KEY || '';
     }
   } catch (e) {
-    // Erişim hatası olursa yut ve boş dön
-    console.warn("Environment access error:", e);
+    // import.meta erişimi başarısız olursa (örneğin eski build araçları) sessizce geç
   }
-  return '';
+
+  // 2. Process Env Kontrolü (Fallback)
+  if (!key) {
+    try {
+      if (typeof process !== 'undefined' && process.env) {
+        key = process.env.API_KEY || 
+              process.env.REACT_APP_API_KEY || 
+              process.env.NEXT_PUBLIC_API_KEY || 
+              process.env.VITE_API_KEY || 
+              '';
+      }
+    } catch (e) {
+      // process erişimi hatası
+    }
+  }
+
+  return key;
 };
 
-// Lazy initialization (Sadece ihtiyaç duyulduğunda başlatılır)
+// Lazy initialization
 let aiInstance: GoogleGenAI | null = null;
 
 const getAI = () => {
   if (!aiInstance) {
     const apiKey = getSafeApiKey();
     if (!apiKey) {
-      throw new Error("API Anahtarı Bulunamadı. Lütfen .env dosyasını veya Vercel ayarlarını kontrol edin.");
+      console.warn("API Key bulunamadı. Lütfen .env dosyasını veya Vercel ortam değişkenlerini kontrol edin.");
     }
-    aiInstance = new GoogleGenAI({ apiKey });
+    // Boş key ile başlatırsak istek anında hata döner, app çökmez.
+    aiInstance = new GoogleGenAI({ apiKey: apiKey || 'missing_api_key' });
   }
   return aiInstance;
 };
@@ -42,13 +57,11 @@ const COMMON_CONFIG = {
   topP: 0.95,
 };
 
-// JSON Temizleme (Optimize Edildi)
 const cleanJsonString = (str: string) => {
   if (!str) return "{}";
-  // Markdown bloklarını temizle
-  const cleaned = str.replace(/```json|```/g, '').trim();
+  // Regex kullanarak tüm markdown bloklarını temizle (Global flag 'g' önemli)
+  const cleaned = str.replace(/```json/g, "").replace(/```/g, "").trim();
   
-  // İlk { veya [ ile Son } veya ] arasını al
   const start = cleaned.search(/[{[]/);
   const end = Math.max(cleaned.lastIndexOf('}'), cleaned.lastIndexOf(']'));
   
@@ -63,6 +76,12 @@ const cleanJsonString = (str: string) => {
 export const getDailyCities = async (dateStr: string): Promise<string[]> => {
   try {
     const ai = getAI();
+    // Key kontrolü burada yapılır, eğer key yoksa boş dizi dönerek UI'ın render olmasını sağla
+    if (!getSafeApiKey()) {
+        console.error("API Key eksik olduğu için şehirler getirilemedi.");
+        return [];
+    }
+
     const prompt = `Bugün (${dateStr}) Türkiye'de TJK yarış programı olan şehirleri JSON array olarak döndür. Örn: ["Bursa", "Şanlıurfa"]. Yoksa [] dön.`;
 
     const response = await ai.models.generateContent({
@@ -85,6 +104,8 @@ export const getDailyCities = async (dateStr: string): Promise<string[]> => {
 export const analyzeRaces = async (city: string, dateStr: string): Promise<DailyProgram> => {
   try {
     const ai = getAI();
+    if (!getSafeApiKey()) throw new Error("API Anahtarı Eksik. Lütfen ayarları kontrol edin.");
+
     const prompt = `
     ROL: Uzman At Yarışı Analisti.
     GÖREV: ${dateStr} - ${city} yarış programını analiz et.
@@ -120,23 +141,24 @@ export const analyzeRaces = async (city: string, dateStr: string): Promise<Daily
 
     const data = JSON.parse(cleanJsonString(response.text));
     
-    // Kaynakları ekle
     const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
     data.sources = chunks
       .filter((c: any) => c.web?.uri && c.web?.title)
       .map((c: any) => ({ title: c.web.title, uri: c.web.uri }))
-      .slice(0, 3); // Max 3 kaynak yeterli
+      .slice(0, 3);
 
     return data;
   } catch (error: any) {
     console.error("Analiz hatası:", error);
-    throw new Error(error.message || "Analiz yapılamadı.");
+    throw new Error(error.message || "Analiz sırasında hata oluştu.");
   }
 };
 
 export const getRaceResults = async (city: string, dateStr: string): Promise<DailyProgram> => {
   try {
     const ai = getAI();
+    if (!getSafeApiKey()) throw new Error("API Anahtarı Eksik.");
+
     const prompt = `
     GÖREV: ${dateStr} - ${city} yarışlarının RESMİ SONUÇLARINI JSON olarak getir.
     Atların ganyanlarını ve derecelerini mutlaka ekle.
