@@ -1,4 +1,4 @@
-export type Page = 'bulletin' | 'results' | 'settings';
+export type Page = 'welcome' | 'bulletin' | 'results' | 'coupon-creator';
 
 export interface Horse {
   no: number;
@@ -42,8 +42,31 @@ export interface AnalysisState {
   error: string | null;
 }
 
-// Basit ayarlar
-export interface AppSettings {
-  showGanyan: boolean;
-  compactMode: boolean;
+// --- KUPON ve BAHİS TİPLERİ ---
+
+export type BetType = 
+  | '6G' // Altılı Ganyan
+  | '5G' // Beşli Ganyan
+  | '4G' // Dörtlü Ganyan
+  | '3G' // Üçlü Ganyan
+  | 'IKILI' // İkili Bahis
+  | 'SIRALI' // Sıralı İkili
+  | 'CIFTE' // Çifte Bahis
+  | 'TABELA'; // Tabela Bahis
+
+export interface CouponLeg {
+  raceId: number;
+  raceNo: number; // Yarışın resmi numarası
+  selectedHorses: number[]; // Seçilen at numaraları
+  isBanko: boolean; // Tek at mı?
+}
+
+export interface Coupon {
+  type: BetType;
+  legs: CouponLeg[];
+  totalCombinations: number;
+  estimatedCost: number; // Tahmini Tutar
+  strategy: 'guvenli' | 'surpriz' | 'dengeli';
+  raceIndexStart?: number; // Hangi koşudan başlıyor (Ganyanlar için)
+  targetRaceId?: number; // Tek koşuluk oyunlar için hedef koşu
 }
