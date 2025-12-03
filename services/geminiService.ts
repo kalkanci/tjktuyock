@@ -2,31 +2,30 @@ import { GoogleGenAI } from "@google/genai";
 import { DailyProgram } from "../types";
 
 // --- GÜVENLİ API KEY ALMA YÖNTEMİ ---
-// Tarayıcıda 'process' nesnesi olmadığı için uygulama çökebilir (Siyah Ekran Hatası).
-// Bu fonksiyon hem Vite (import.meta) hem de Webpack (process.env) ortamlarını güvenle kontrol eder.
+// Tarayıcıda 'process' nesnesi olmadığı için uygulama çökebilir.
 const getSafeApiKey = (): string => {
   let key = '';
   
-  // 1. Vite Kontrolü (try-catch ile sarmalandı)
+  // 1. Vite Environment (En güvenli yöntem)
   try {
-    // @ts-ignore - import.meta typescript hatası vermemesi için
+    // @ts-ignore
     if (import.meta && import.meta.env && import.meta.env.VITE_API_KEY) {
       // @ts-ignore
       key = import.meta.env.VITE_API_KEY;
     }
   } catch (e) {}
 
-  // 2. Eğer Vite key yoksa standart process.env kontrolü
+  // 2. Process Env (Webpack/CRA/Next.js)
   if (!key) {
     try {
-      if (typeof process !== 'undefined' && process.env) {
-        // Vercel genelde REACT_APP_ veya NEXT_PUBLIC_ öneklerini client-side'a geçirir.
-        // Ancak prompt kuralları gereği process.env.API_KEY'e de bakıyoruz.
-        key = process.env.API_KEY || 
-              process.env.REACT_APP_API_KEY || 
-              process.env.NEXT_PUBLIC_API_KEY || 
-              '';
-      }
+      // process'e doğrudan erişmek yerine typeof kontrolü yapıyoruz
+      // Vercel build sırasında bu değişkenleri inject eder.
+      const env = typeof process !== 'undefined' ? process.env : {};
+      
+      key = env.API_KEY || 
+            env.REACT_APP_API_KEY || 
+            env.NEXT_PUBLIC_API_KEY || 
+            '';
     } catch (e) {}
   }
   
@@ -40,7 +39,10 @@ const getAI = () => {
   if (!aiInstance) {
     const apiKey = getSafeApiKey();
     if (!apiKey) {
-      console.warn("API Key bulunamadı! Lütfen .env dosyasını veya Vercel Environment Variables ayarlarını kontrol edin.");
+      console.warn("API Key bulunamadı!");
+      // Hata fırlatmıyoruz, çünkü UI'da hata mesajı göstereceğiz.
+      // Siyah ekranı önlemek için boş key ile başlatmıyoruz, null dönüyoruz.
+      throw new Error("API Key eksik. Lütfen Vercel ayarlarında API_KEY değişkenini tanımlayın.");
     }
     aiInstance = new GoogleGenAI({ apiKey });
   }
@@ -97,6 +99,7 @@ export const getDailyCities = async (dateStr: string): Promise<string[]> => {
     return [];
   } catch (error) {
     console.error("Şehirler alınırken hata:", error);
+    // UI tarafında yakalanması için hatayı fırlatmıyoruz, boş dizi dönüyoruz ki uygulama çalışmaya devam etsin
     return [];
   }
 };
@@ -156,9 +159,9 @@ export const analyzeRaces = async (city: string, dateStr: string): Promise<Daily
     if (webSources.length > 0) data.sources = webSources.slice(0, 5);
 
     return data;
-  } catch (error) {
+  } catch (error: any) {
     console.error("Analiz hatası:", error);
-    throw new Error("Analiz sırasında bir hata oluştu. Lütfen tekrar deneyin.");
+    throw new Error(error.message || "Analiz sırasında bir hata oluştu.");
   }
 };
 
@@ -193,8 +196,8 @@ export const getRaceResults = async (city: string, dateStr: string): Promise<Dai
     if (webSources.length > 0) data.sources = webSources.slice(0, 5);
 
     return data;
-  } catch (error) {
+  } catch (error: any) {
     console.error("Sonuç hatası:", error);
-    throw new Error("Sonuçlar alınırken hata oluştu.");
+    throw new Error(error.message || "Sonuçlar alınırken hata oluştu.");
   }
 };
