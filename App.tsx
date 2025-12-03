@@ -1,11 +1,11 @@
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { Layout } from './components/Layout';
 import { FilterBar } from './components/FilterBar';
 import { RaceCard } from './components/RaceCard';
 import { LoadingOverlay, LoadingType } from './components/LoadingOverlay';
-import { analyzeRaces, getDailyCities, getRaceResults, hasValidApiKey } from './services/geminiService';
+import { analyzeRaces, getDailyCities, getRaceResults } from './services/geminiService';
 import { AnalysisState, Page } from './types';
-import { AlertTriangle, ExternalLink, Filter, Info, Lock, Key, ChevronRight } from 'lucide-react';
+import { AlertTriangle, ExternalLink, Filter, Info, ChevronRight } from 'lucide-react';
 import { DashboardChart } from './components/DashboardChart';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { CouponCreator } from './components/CouponCreator';
@@ -13,7 +13,6 @@ import { CouponCreator } from './components/CouponCreator';
 const App: React.FC = () => {
   // Navigation State
   const [currentPage, setCurrentPage] = useState<Page>('welcome');
-  const [apiKeyError, setApiKeyError] = useState<boolean>(false);
   
   // Common Data State
   const todayStr = new Date().toISOString().split('T')[0];
@@ -32,14 +31,6 @@ const App: React.FC = () => {
 
   const [selectedRaceId, setSelectedRaceId] = useState<number | 'all'>('all');
 
-  // --- INIT CHECK ---
-  useEffect(() => {
-    // Uygulama açıldığında API Key kontrolü yap
-    if (!hasValidApiKey()) {
-      setApiKeyError(true);
-    }
-  }, []);
-
   // --- HANDLERS ---
 
   const handleNavigate = (page: Page) => {
@@ -48,7 +39,6 @@ const App: React.FC = () => {
   };
 
   const handleStartApp = () => {
-    if (apiKeyError) return; // Key yoksa başlatma
     setCurrentPage('bulletin');
   };
 
@@ -62,8 +52,6 @@ const App: React.FC = () => {
   };
 
   const handleFindCities = useCallback(async () => {
-    if (apiKeyError) return;
-
     setLoadingType('cities');
     setAvailableCities([]);
     setSelectedCity(null);
@@ -85,11 +73,9 @@ const App: React.FC = () => {
     } finally {
       setLoadingType(null);
     }
-  }, [date, currentPage, apiKeyError]);
+  }, [date, currentPage]);
 
   const handleCitySelect = useCallback(async (city: string) => {
-    if (apiKeyError) return;
-
     setSelectedCity(city);
     
     const isResultsPage = currentPage === 'results';
@@ -122,7 +108,7 @@ const App: React.FC = () => {
     } finally {
       setLoadingType(null);
     }
-  }, [date, currentPage, bulletinState.data, resultsState.data, apiKeyError]);
+  }, [date, currentPage, bulletinState.data, resultsState.data]);
 
   // --- DERIVED STATE ---
   
@@ -138,65 +124,6 @@ const App: React.FC = () => {
   }, [currentState.data, selectedRaceId]);
 
   // --- RENDER CONTENT ---
-
-  // CRITICAL: Eğer API Key yoksa uygulama açılmasın, uyarı versin.
-  if (apiKeyError) {
-    return (
-      <div className="min-h-screen bg-black flex flex-col items-center justify-center p-6 text-center">
-        <div className="max-w-2xl w-full bg-racing-900 border border-racing-800 rounded-2xl p-8 shadow-2xl">
-          
-          <div className="flex flex-col items-center mb-8">
-             <div className="w-20 h-20 bg-racing-800 rounded-full flex items-center justify-center mb-4 ring-4 ring-racing-700">
-                <Key className="text-racing-gold w-10 h-10" />
-             </div>
-             <h1 className="text-2xl font-bold text-white mb-2">Kurulum Gerekli</h1>
-             <p className="text-gray-400">Uygulamanın çalışması için Google'dan ücretsiz bir API anahtarı almalısınız.</p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 text-left">
-             <div className="bg-racing-950/50 p-5 rounded-xl border border-racing-800">
-                <div className="flex items-center gap-3 mb-3">
-                   <span className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-xs">1</span>
-                   <h3 className="font-bold text-white">Anahtarı Alın</h3>
-                </div>
-                <p className="text-xs text-gray-400 mb-4">Google AI Studio üzerinden ücretsiz Gemini API anahtarı oluşturun.</p>
-                <a 
-                  href="https://aistudio.google.com/app/apikey" 
-                  target="_blank" 
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-2 text-xs font-bold text-blue-400 hover:text-blue-300 transition-colors"
-                >
-                  <ExternalLink size={12} />
-                  Google AI Studio'ya Git
-                </a>
-             </div>
-
-             <div className="bg-racing-950/50 p-5 rounded-xl border border-racing-800">
-                <div className="flex items-center gap-3 mb-3">
-                   <span className="w-6 h-6 rounded-full bg-purple-600 text-white flex items-center justify-center font-bold text-xs">2</span>
-                   <h3 className="font-bold text-white">Vercel'e Ekleyin</h3>
-                </div>
-                <ul className="text-xs text-gray-400 space-y-2">
-                   <li>1. Vercel projenizde <strong>Settings</strong> sekmesine gidin.</li>
-                   <li>2. <strong>Environment Variables</strong> menüsünü açın.</li>
-                   <li>3. Key: <code className="text-purple-400">VITE_API_KEY</code></li>
-                   <li>4. Value: <em>Aldığınız kodu yapıştırın</em></li>
-                   <li>5. Projenizi <strong>Redeploy</strong> edin.</li>
-                </ul>
-             </div>
-          </div>
-
-          <button 
-            onClick={() => window.location.reload()}
-            className="w-full md:w-auto px-8 bg-racing-800 hover:bg-racing-700 text-white font-bold py-3 rounded-xl transition-colors border border-racing-700 flex items-center justify-center gap-2 mx-auto"
-          >
-            <RefreshCw size={18} />
-            Ayarları Yaptım, Sayfayı Yenile
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   const renderContent = () => {
     if (currentPage === 'welcome') {
@@ -363,5 +290,3 @@ const App: React.FC = () => {
 };
 
 export default App;
-// Helper for Refresh Icon in error view
-import { RefreshCw } from 'lucide-react';

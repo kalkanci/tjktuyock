@@ -1,20 +1,8 @@
 import { GoogleGenAI } from "@google/genai";
 import { DailyProgram } from "../types";
 
-// --- GÜVENLİ API KEY YÖNETİMİ ---
-// Guidelines: The API key must be obtained exclusively from the environment variable process.env.API_KEY.
-export const hasValidApiKey = (): boolean => {
-  return !!process.env.API_KEY;
-};
-
-let aiInstance: GoogleGenAI | null = null;
-
-const getAI = () => {
-  if (!aiInstance) {
-    aiInstance = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  }
-  return aiInstance;
-};
+// Always use process.env.API_KEY per guidelines
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 // Modeli biraz daha "yaratıcılıktan uzak, veriye sadık" moda çekiyoruz
 const modelId = "gemini-2.5-flash"; 
@@ -41,9 +29,6 @@ const cleanJsonString = (str: string) => {
 
 export const getDailyCities = async (dateStr: string): Promise<string[]> => {
   try {
-    const ai = getAI();
-    if (!hasValidApiKey()) return [];
-
     // Prompt, Google Search'ü spesifik sitelere yönlendiriyor
     const prompt = `
     GÖREV: ${dateStr} tarihi için "TJK Yarış Programı"nı ara.
@@ -71,9 +56,6 @@ export const getDailyCities = async (dateStr: string): Promise<string[]> => {
 
 export const analyzeRaces = async (city: string, dateStr: string): Promise<DailyProgram> => {
   try {
-    const ai = getAI();
-    if (!hasValidApiKey()) throw new Error("API Anahtarı bulunamadı.");
-
     // --- KRİTİK GÜNCELLEME: Prompt artık veriyi "üretmiyor", "bulup çıkarıyor" ---
     const prompt = `
     GÖREV: TJK (Türkiye Jokey Kulübü) ${dateStr} tarihli ${city} hipodromu RESMİ yarış programını bul ve verileri çıkar.
@@ -141,9 +123,6 @@ export const analyzeRaces = async (city: string, dateStr: string): Promise<Daily
 
 export const getRaceResults = async (city: string, dateStr: string): Promise<DailyProgram> => {
   try {
-    const ai = getAI();
-    if (!hasValidApiKey()) throw new Error("API Anahtarı bulunamadı.");
-
     const prompt = `
     GÖREV: ${dateStr} - ${city} at yarışı RESMİ SONUÇLARINI bul.
     KURALLAR:
