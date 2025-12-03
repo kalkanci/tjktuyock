@@ -17,7 +17,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentPage, onNavigat
   return (
     <div className="min-h-screen bg-racing-950 text-gray-100 pb-28 md:pb-0 md:pl-64">
       {/* Mobile Header */}
-      <header className="md:hidden fixed top-0 left-0 right-0 h-16 bg-racing-950/80 border-b border-racing-800 flex items-center justify-center px-4 z-50 shadow-lg backdrop-blur-md">
+      <header className="md:hidden fixed top-0 left-0 right-0 h-16 bg-racing-950/90 border-b border-racing-800 flex items-center justify-center px-4 z-50 shadow-lg backdrop-blur-md">
         <div className="flex items-center gap-2">
           <Trophy className="w-5 h-5 text-racing-gold" />
           <h1 className="text-lg font-bold bg-gradient-to-r from-racing-gold to-yellow-600 bg-clip-text text-transparent tracking-wide">
@@ -68,8 +68,8 @@ export const Layout: React.FC<LayoutProps> = ({ children, currentPage, onNavigat
         {children}
       </main>
 
-      {/* Mobile Bottom Nav - Card Style */}
-      <nav className="md:hidden fixed bottom-4 left-4 right-4 z-50 flex items-stretch gap-2">
+      {/* Mobile Bottom Nav - Floating Cards */}
+      <nav className="md:hidden fixed bottom-6 left-4 right-4 z-50 grid grid-cols-3 gap-3">
         <MobileNavItem 
           icon={<TrendingUp />} 
           label="Bülten" 
@@ -112,12 +112,12 @@ const NavItem = ({ icon, label, active = false, onClick }: { icon: React.ReactNo
 const MobileNavItem = ({ icon, label, active = false, onClick }: { icon: React.ReactNode, label: string, active?: boolean, onClick: () => void }) => (
   <button 
     onClick={onClick}
-    className={`flex-1 flex flex-col items-center justify-center p-3 rounded-2xl transition-all duration-300 border backdrop-blur-md shadow-lg
+    className={`flex flex-col items-center justify-center py-3 px-1 rounded-2xl transition-all duration-300 border shadow-2xl backdrop-blur-xl
       ${active 
-        ? 'bg-racing-800 border-racing-700 text-blue-400 translate-y-[-4px] shadow-blue-900/20' 
-        : 'bg-racing-900/90 border-racing-800 text-gray-500 hover:bg-racing-800'}`}
+        ? 'bg-racing-900/95 border-racing-700 text-blue-400 translate-y-[-4px] shadow-blue-500/20' 
+        : 'bg-racing-900/80 border-racing-800/50 text-gray-500 hover:bg-racing-800 hover:border-racing-700'}`}
   >
     {React.cloneElement(icon as React.ReactElement<{ size?: number | string }>, { size: 22, strokeWidth: active ? 2.5 : 2 })}
-    <span className="text-[10px] mt-1 font-bold tracking-wide">{label}</span>
+    <span className="text-[10px] mt-1.5 font-bold tracking-wide">{label}</span>
   </button>
 );
