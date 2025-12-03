@@ -3,171 +3,224 @@ import { DailyProgram } from "../types";
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-const SYSTEM_INSTRUCTION = `
-Sen "Yarış Analiz Motoru"sun.
-GÖREV: TJK Yarış Bültenini veya Sonuçlarını analiz etmek.
+const modelId = "gemini-2.5-flash";
 
-KURALLAR:
-1. Hızlı ol. Tek seferde tüm sayfayı analiz et.
-2. At isimlerini temiz yaz (Örn: "BOLD PILOT" - Ekler olmasın).
-3. Sonuçlar için Ganyan ve Derece bilgisini mutlaka bulmaya çalış.
+const COMMON_CONFIG = {
+  temperature: 0.3, // Daha tutarlı ve gerçekçi veriler için düşük sıcaklık
+  topK: 40,
+  topP: 0.95,
+};
 
-ÇIKTI FORMATI:
-Sadece geçerli bir JSON objesi döndür.
-`;
+// Yardımcı Fonksiyon: JSON temizleme ve çıkarma
+const cleanJsonString = (str: string) => {
+  let cleaned = str.replace(/```json/g, '').replace(/```/g, '').trim();
+  
+  // JSON başlangıç ve bitiş karakterlerini bul
+  const firstBrace = cleaned.indexOf('{');
+  const firstBracket = cleaned.indexOf('[');
+  
+  // Hangisi önce geliyorsa onu başlangıç noktası al (Array veya Object)
+  let start = -1;
+  if (firstBrace !== -1 && firstBracket !== -1) {
+    start = Math.min(firstBrace, firstBracket);
+  } else if (firstBrace !== -1) {
+    start = firstBrace;
+  } else {
+    start = firstBracket;
+  }
+
+  const lastBrace = cleaned.lastIndexOf('}');
+  const lastBracket = cleaned.lastIndexOf(']');
+  const end = Math.max(lastBrace, lastBracket);
+  
+  if (start !== -1 && end !== -1 && end > start) {
+    return cleaned.substring(start, end + 1);
+  }
+  
+  return cleaned;
+};
 
 export const getDailyCities = async (dateStr: string): Promise<string[]> => {
-  const dateObj = new Date(dateStr);
-  const formattedDate = dateObj.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' });
-  
-  const prompt = `
-  TARİH: ${formattedDate}
-  SORU: Bugün (${formattedDate}) Türkiye'de hangi hipodromlarda (şehirlerde) TJK at yarışı var?
-  Sadece şehir isimlerini içeren JSON array döndür. Örn: ["İstanbul", "Adana"]
-  Eğer veri yoksa [] döndür.
-  `;
-
   try {
+    const prompt = `
+    Bugün (${dateStr}) Türkiye'de hangi şehirlerde at yarışı (TJK) programı var?
+    
+    Lütfen sadece şehir isimlerini içeren bir JSON dizisi döndür.
+    Örnek: ["İstanbul", "Adana"]
+    Eğer program yoksa [] döndür.
+    SADECE JSON DÖNDÜR, BAŞKA METİN YAZMA.
+    `;
+
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: modelId,
       contents: prompt,
-      config: { tools: [{ googleSearch: {} }], temperature: 0.1 },
+      config: {
+        ...COMMON_CONFIG,
+        tools: [{ googleSearch: {} }]
+      }
     });
-    let text = response.text || "[]";
-    text = text.replace(/```json/g, '').replace(/```/g, '').trim();
-    const firstBracket = text.indexOf('[');
-    const lastBracket = text.lastIndexOf(']');
-    if (firstBracket !== -1 && lastBracket !== -1) {
-      return JSON.parse(text.substring(firstBracket, lastBracket + 1));
+
+    if (response.text) {
+      const parsed = JSON.parse(cleanJsonString(response.text));
+      // Dizi olduğundan emin ol
+      return Array.isArray(parsed) ? parsed : [];
     }
     return [];
   } catch (error) {
-    console.error("City Discovery Error:", error);
+    console.error("Şehirler alınırken hata:", error);
     return [];
   }
 };
 
 export const analyzeRaces = async (city: string, dateStr: string): Promise<DailyProgram> => {
-  const dateObj = new Date(dateStr);
-  const formattedDate = dateObj.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' });
-  
   const prompt = `
-  TARİH: ${formattedDate}
-  ŞEHİR: ${city}
-  GÖREV: Yarış Bülteni Tahmini
+  SEN UZMAN BİR AT YARIŞI ANALİSTİSİN.
   
-  Bu tarihteki yarış programını bul ve analiz et.
-  Her koşu için favori atlara "power_score" (80-100 arası favoriler, 50-80 arası plaseler) ver.
+  GÖREV: ${dateStr} tarihinde ${city} hipodromundaki yarış programını detaylı analiz et.
   
-  JSON FORMATI:
+  KAYNAKLAR:
+  - Google Search aracını kullanarak TJK.org resmi programını, "Liderform", "Fanatik", "Nalkapon" ve "Yarış Dergisi" gibi kaynakları tara.
+  - Güncel AGF (Altılı Ganyan Favorisi) tablolarını bulmaya çalış.
+
+  KURALLAR (KESİN UYULACAK):
+  1. **ASLA "Bilinmiyor", "Unknown" veya "X" YAZMA.** Bir veriyi bulamıyorsan, tahmin etme, o alanı boş bırak veya bağlama en uygun teknik terimi kullan.
+  2. **Koşu İsimleri:** Eğer özel bir isim (Örn: Çaldıran Koşusu) yoksa, teknik şartı yaz (Örn: "Maiden", "Şartlı-4", "Handikap-15"). Bunu atların yaş ve kazançlarından çıkarabilirsin.
+  3. **Güç Puanı (Power Score):** 
+     - Favori atlara (AGF oranı yüksek veya yazarların ilk atı) 85-99 arası puan ver.
+     - Plase atlara 70-84 arası puan ver.
+     - Sürpriz atlara 40-69 arası puan ver.
+     - Puanlar tutarlı olmalı, rastgele olmamalı.
+  4. **Risk Seviyesi:** Favori çok netse "düşük", yarış denkse "yüksek" risk yaz.
+  
+  İSTENEN JSON FORMATI:
   {
     "city": "${city}",
-    "date": "${formattedDate}",
-    "summary": "Program hakkında 1 cümlelik özet (Örn: İstanbul'da çim pist yarışları ağırlıkta, favoriler şanslı görünüyor).",
+    "date": "${dateStr}",
+    "summary": "Programın genel değerlendirmesi (pist durumu, hava durumu, günün en sağlam kalesi vb.)",
+    "sources": [ { "title": "Kaynak Adı", "uri": "Link" } ],
     "races": [
       {
-        "id": 1, 
-        "time": "14:30", 
-        "name": "Şartlı 4", 
-        "distance": "1400m Çim", 
-        "trackType": "Çim",
-        "race_summary": "Bu koşuda seri safkanlar ön planda.",
-        "horses": [
-           { "no": 1, "name": "AT ADI", "jockey": "A.Çelik", "power_score": 95, "risk_level": "düşük" },
-           { "no": 2, "name": "AT ADI 2", "jockey": "H.Karataş", "power_score": 88, "risk_level": "orta" }
-        ]
-      }
-    ]
-  }
-  
-  ÖNEMLİ: Sadece JSON döndür.
-  `;
-
-  return fetchFromGemini(prompt);
-};
-
-export const getRaceResults = async (city: string, dateStr: string): Promise<DailyProgram> => {
-  const dateObj = new Date(dateStr);
-  const formattedDate = dateObj.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' });
-
-  const prompt = `
-  TARİH: ${formattedDate}
-  ŞEHİR: ${city}
-  GÖREV: Yarış Sonuçlarını Bul (TJK Resmi Sonuçları)
-  
-  Bu tarihte ${city} hipodromunda koşulan yarışların KESİN SONUÇLARINI bul.
-  
-  JSON FORMATI:
-  {
-    "city": "${city}", 
-    "date": "${formattedDate}", 
-    "summary": "Günün sonuç özeti (Örn: Favorilerin kazandığı bir gün oldu).",
-    "races": [
-      {
-        "id": 1, 
-        "time": "13:30", 
-        "name": "Maiden", 
-        "distance": "1200m Kum", 
+        "id": 1,
+        "time": "13:30",
+        "name": "Şartlı 3 / Dişi",
+        "distance": "1400m",
         "trackType": "Kum",
+        "race_summary": "Yarışın kısa taktik analizi.",
         "horses": [
-           { "no": 1, "name": "KAZANAN AT", "jockey": "Jokey", "ganyan": "2.35", "finish_time": "1.12.45" },
-           { "no": 2, "name": "İKİNCİ AT", "jockey": "Jokey", "ganyan": "1.80", "finish_time": "1.12.80" },
-           { "no": 3, "name": "ÜÇÜNCÜ AT", "jockey": "Jokey", "ganyan": "5.40", "finish_time": "" },
-           { "no": 4, "name": "DÖRDÜNCÜ AT", "jockey": "Jokey", "ganyan": "", "finish_time": "" }
+          {
+            "no": 1,
+            "name": "BOLD PILOT",
+            "jockey": "H.KARATAŞ",
+            "weight": "60",
+            "power_score": 95,
+            "risk_level": "düşük"
+          }
+          // Diğer atlar... (En az 6-7 at ekle)
         ]
       }
+      // Diğer koşular...
     ]
   }
   
-  DİKKAT: "horses" dizisinde "no" alanı bitiriş sırasını temsil etsin (1 = Birinci, 2 = İkinci).
-  Ganyanları TL cinsinden yaz.
+  SADECE JSON DÖNDÜR. MARKDOWN VEYA AÇIKLAMA EKLEME.
   `;
 
-  return fetchFromGemini(prompt);
-};
-
-async function fetchFromGemini(prompt: string): Promise<DailyProgram> {
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: modelId,
       contents: prompt,
       config: {
-        systemInstruction: SYSTEM_INSTRUCTION,
-        tools: [{ googleSearch: {} }],
-        temperature: 0.2, // Low temperature for deterministic formatting
-      },
+        ...COMMON_CONFIG,
+        tools: [{ googleSearch: {} }]
+      }
     });
 
-    let text = response.text || "";
-    
-    // Clean markdown
-    text = text.replace(/```json/g, '').replace(/```/g, '').trim();
+    if (!response.text) throw new Error("Veri alınamadı");
 
-    // Find JSON object
-    const firstBrace = text.indexOf('{');
-    const lastBrace = text.lastIndexOf('}');
+    const data = JSON.parse(cleanJsonString(response.text));
     
-    if (firstBrace === -1 || lastBrace === -1) {
-      throw new Error("Veri formatı hatalı.");
+    // races dizisinin varlığını garanti et
+    if (!Array.isArray(data.races)) {
+      data.races = [];
     }
 
-    text = text.substring(firstBrace, lastBrace + 1);
-    
-    const data = JSON.parse(text) as DailyProgram;
-
-    // Extract sources
+    // Grounding metadata'dan kaynakları ekle (varsa)
     const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-    const sources = chunks
+    const webSources = chunks
       .filter((c: any) => c.web?.uri && c.web?.title)
       .map((c: any) => ({ title: c.web.title, uri: c.web.uri }));
     
-    // Deduplicate sources
-    const uniqueSources = Array.from(new Map(sources.map((item:any) => [item.uri, item])).values());
+    if (webSources.length > 0) {
+      data.sources = webSources.slice(0, 5); // İlk 5 kaynağı al
+    }
 
-    return { ...data, sources: uniqueSources as any[] };
-
-  } catch (error: any) {
-    console.error("Gemini Error:", error);
-    throw new Error("Veriler alınırken bir sorun oluştu. Lütfen tekrar deneyin.");
+    return data;
+  } catch (error) {
+    console.error("Analiz hatası:", error);
+    throw new Error("Yarış verileri analiz edilirken bir sorun oluştu. Lütfen tekrar deneyin.");
   }
-}
+};
+
+export const getRaceResults = async (city: string, dateStr: string): Promise<DailyProgram> => {
+  const prompt = `
+  GÖREV: ${dateStr} tarihinde ${city} hipodromunda koşulan yarışların RESMİ SONUÇLARINI getir.
+  
+  Arama Terimleri: "TJK ${dateStr} ${city} sonuçları", "${city} at yarışı sonuçları ${dateStr}".
+  
+  KURALLAR:
+  1. Sadece koşulmuş ve sonucu kesinleşmiş yarışları getir.
+  2. **Ganyan:** Kazanan atın ganyanını mutlaka bul (Örn: "3.45"). Bulamazsan "-" yaz ama "Bilinmiyor" yazma.
+  3. **Sıralama:** Her koşunun ilk 4 atını doğru sırayla getir.
+  4. **Derece:** Bitiriş derecesini (Örn: "1.24.56") bulmaya çalış.
+  
+  İSTENEN JSON FORMATI:
+  (DailyProgram interface yapısına uygun olmalı, horses dizisi içinde finish_time, ganyan, ve difference alanlarını doldur. power_score yerine 0 verebilirsin.)
+  
+  Örnek At Obj:
+  {
+    "no": 1, // Bitiriş sırası değil, atın numarası
+    "name": "AT ADI",
+    "jockey": "JOKEY ADI",
+    "finish_time": "1.35.22",
+    "ganyan": "4.25",
+    "power_score": 0
+  }
+  
+  SADECE JSON DÖNDÜR. MARKDOWN VEYA AÇIKLAMA EKLEME.
+  `;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: modelId,
+      contents: prompt,
+      config: {
+        ...COMMON_CONFIG,
+        tools: [{ googleSearch: {} }]
+      }
+    });
+
+    if (!response.text) throw new Error("Sonuç verisi alınamadı");
+    
+    const data = JSON.parse(cleanJsonString(response.text));
+    
+    // races dizisinin varlığını garanti et
+    if (!Array.isArray(data.races)) {
+      data.races = [];
+    }
+    
+    // Kaynakları ekle
+    const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+    const webSources = chunks
+      .filter((c: any) => c.web?.uri && c.web?.title)
+      .map((c: any) => ({ title: c.web.title, uri: c.web.uri }));
+    
+    if (webSources.length > 0) {
+      data.sources = webSources.slice(0, 5);
+    }
+
+    return data;
+  } catch (error) {
+    console.error("Sonuç hatası:", error);
+    throw new Error("Sonuçlar alınırken hata oluştu.");
+  }
+};

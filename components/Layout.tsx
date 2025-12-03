@@ -94,7 +94,7 @@ const NavItem = ({ icon, label, active = false, onClick }: { icon: React.ReactNo
     onClick={onClick}
     className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${active ? 'bg-racing-700 text-racing-accent' : 'text-gray-400 hover:bg-racing-700/50 hover:text-gray-200'}`}
   >
-    {React.cloneElement(icon as React.ReactElement, { size: 20 })}
+    {React.cloneElement(icon as React.ReactElement<{ size?: number | string }>, { size: 20 })}
     <span className="font-medium">{label}</span>
   </button>
 );
@@ -104,7 +104,7 @@ const MobileNavItem = ({ icon, label, active = false, onClick }: { icon: React.R
     onClick={onClick}
     className={`flex flex-col items-center justify-center w-full h-full ${active ? 'text-racing-accent' : 'text-gray-500'}`}
   >
-    {React.cloneElement(icon as React.ReactElement, { size: 24 })}
+    {React.cloneElement(icon as React.ReactElement<{ size?: number | string }>, { size: 24 })}
     <span className="text-[10px] mt-1 font-medium">{label}</span>
   </button>
 );
