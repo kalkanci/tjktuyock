@@ -1,48 +1,33 @@
 import { GoogleGenAI } from "@google/genai";
 import { DailyProgram } from "../types";
 
-// --- GÜVENLİ API KEY ALMA YÖNTEMİ ---
-// Tarayıcıda 'process' nesnesi olmadığı için uygulama çökebilir.
+// --- GÜVENLİ API KEY YÖNETİMİ ---
+// Not: 'import.meta' kullanımı bazı build araçlarında (eski Webpack vb.) syntax error verip 
+// uygulamanın hiç açılmamasına (siyah ekran) sebep olabilir. Bu yüzden sadece process.env kullanıyoruz.
 const getSafeApiKey = (): string => {
-  let key = '';
-  
-  // 1. Vite Environment (En güvenli yöntem)
   try {
-    // @ts-ignore
-    if (import.meta && import.meta.env && import.meta.env.VITE_API_KEY) {
-      // @ts-ignore
-      key = import.meta.env.VITE_API_KEY;
+    // process nesnesinin varlığını güvenli bir şekilde kontrol et
+    if (typeof process !== 'undefined' && process.env) {
+      return process.env.API_KEY || 
+             process.env.REACT_APP_API_KEY || 
+             process.env.NEXT_PUBLIC_API_KEY || 
+             '';
     }
-  } catch (e) {}
-
-  // 2. Process Env (Webpack/CRA/Next.js)
-  if (!key) {
-    try {
-      // process'e doğrudan erişmek yerine typeof kontrolü yapıyoruz
-      // Vercel build sırasında bu değişkenleri inject eder.
-      const env = typeof process !== 'undefined' ? process.env : {};
-      
-      key = env.API_KEY || 
-            env.REACT_APP_API_KEY || 
-            env.NEXT_PUBLIC_API_KEY || 
-            '';
-    } catch (e) {}
+  } catch (e) {
+    // Erişim hatası olursa yut ve boş dön
+    console.warn("Environment access error:", e);
   }
-  
-  return key;
+  return '';
 };
 
-// Lazy initialization
+// Lazy initialization (Sadece ihtiyaç duyulduğunda başlatılır)
 let aiInstance: GoogleGenAI | null = null;
 
 const getAI = () => {
   if (!aiInstance) {
     const apiKey = getSafeApiKey();
     if (!apiKey) {
-      console.warn("API Key bulunamadı!");
-      // Hata fırlatmıyoruz, çünkü UI'da hata mesajı göstereceğiz.
-      // Siyah ekranı önlemek için boş key ile başlatmıyoruz, null dönüyoruz.
-      throw new Error("API Key eksik. Lütfen Vercel ayarlarında API_KEY değişkenini tanımlayın.");
+      throw new Error("API Anahtarı Bulunamadı. Lütfen .env dosyasını veya Vercel ayarlarını kontrol edin.");
     }
     aiInstance = new GoogleGenAI({ apiKey });
   }
@@ -57,20 +42,15 @@ const COMMON_CONFIG = {
   topP: 0.95,
 };
 
+// JSON Temizleme (Optimize Edildi)
 const cleanJsonString = (str: string) => {
   if (!str) return "{}";
-  let cleaned = str.replace(/```json/g, '').replace(/```/g, '').trim();
-  const firstBrace = cleaned.indexOf('{');
-  const firstBracket = cleaned.indexOf('[');
-  let start = -1;
+  // Markdown bloklarını temizle
+  const cleaned = str.replace(/```json|```/g, '').trim();
   
-  if (firstBrace !== -1 && firstBracket !== -1) start = Math.min(firstBrace, firstBracket);
-  else if (firstBrace !== -1) start = firstBrace;
-  else start = firstBracket;
-
-  const lastBrace = cleaned.lastIndexOf('}');
-  const lastBracket = cleaned.lastIndexOf(']');
-  const end = Math.max(lastBrace, lastBracket);
+  // İlk { veya [ ile Son } veya ] arasını al
+  const start = cleaned.search(/[{[]/);
+  const end = Math.max(cleaned.lastIndexOf('}'), cleaned.lastIndexOf(']'));
   
   if (start !== -1 && end !== -1 && end > start) {
     return cleaned.substring(start, end + 1);
@@ -78,13 +58,12 @@ const cleanJsonString = (str: string) => {
   return cleaned;
 };
 
+// --- API FONKSİYONLARI ---
+
 export const getDailyCities = async (dateStr: string): Promise<string[]> => {
   try {
     const ai = getAI();
-    const prompt = `
-    Bugün (${dateStr}) Türkiye'de hangi şehirlerde at yarışı (TJK) programı var?
-    Lütfen sadece şehir isimlerini içeren bir JSON dizisi döndür. Örnek: ["İstanbul", "Adana"]. Eğer yoksa [] döndür.
-    `;
+    const prompt = `Bugün (${dateStr}) Türkiye'de TJK yarış programı olan şehirleri JSON array olarak döndür. Örn: ["Bursa", "Şanlıurfa"]. Yoksa [] dön.`;
 
     const response = await ai.models.generateContent({
       model: modelId,
@@ -98,8 +77,7 @@ export const getDailyCities = async (dateStr: string): Promise<string[]> => {
     }
     return [];
   } catch (error) {
-    console.error("Şehirler alınırken hata:", error);
-    // UI tarafında yakalanması için hatayı fırlatmıyoruz, boş dizi dönüyoruz ki uygulama çalışmaya devam etsin
+    console.error("Şehir verisi alınamadı:", error);
     return [];
   }
 };
@@ -108,36 +86,28 @@ export const analyzeRaces = async (city: string, dateStr: string): Promise<Daily
   try {
     const ai = getAI();
     const prompt = `
-    SEN UZMAN BİR AT YARIŞI ANALİSTİSİN.
-    GÖREV: ${dateStr} tarihinde ${city} hipodromundaki yarış programını detaylı analiz et.
-    KAYNAKLAR: TJK.org, Liderform, Fanatik, Nalkapon.
+    ROL: Uzman At Yarışı Analisti.
+    GÖREV: ${dateStr} - ${city} yarış programını analiz et.
+    ÇIKTI: SADECE JSON formatında veri.
     
-    KURALLAR:
-    1. Bilinmeyen verilere asla "Bilinmiyor" yazma, tahmin et veya boş bırak.
-    2. Koşu tiplerini (Maiden, Handikap vb.) belirt.
-    3. Güç Puanı: Favorilere 85-99, Plaselere 70-84, Sürprizlere 40-69 ver.
-    
-    İSTENEN JSON FORMATI:
+    JSON ŞEMASI:
     {
       "city": "${city}",
       "date": "${dateStr}",
-      "summary": "Genel analiz...",
-      "sources": [ { "title": "Kaynak", "uri": "URL" } ],
+      "summary": "Kısa genel değerlendirme",
       "races": [
         {
           "id": 1,
-          "time": "13:30",
+          "time": "14:00",
           "name": "Yarış Adı",
-          "distance": "1400m",
-          "trackType": "Kum",
-          "race_summary": "Kısa analiz",
+          "distance": "Mesafe",
+          "trackType": "Pist",
           "horses": [
-            { "no": 1, "name": "AT ADI", "jockey": "JOKEY", "weight": "60", "power_score": 95, "risk_level": "düşük" }
+            { "no": 1, "name": "AT ADI", "jockey": "Jokey", "weight": "Kilo", "power_score": 90 }
           ]
         }
       ]
     }
-    SADECE JSON DÖNDÜR.
     `;
 
     const response = await ai.models.generateContent({
@@ -146,22 +116,21 @@ export const analyzeRaces = async (city: string, dateStr: string): Promise<Daily
       config: { ...COMMON_CONFIG, tools: [{ googleSearch: {} }] }
     });
 
-    if (!response.text) throw new Error("Veri alınamadı");
+    if (!response.text) throw new Error("AI yanıtı boş.");
 
     const data = JSON.parse(cleanJsonString(response.text));
-    if (!Array.isArray(data.races)) data.races = [];
-
-    const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-    const webSources = chunks
-      .filter((c: any) => c.web?.uri && c.web?.title)
-      .map((c: any) => ({ title: c.web.title, uri: c.web.uri }));
     
-    if (webSources.length > 0) data.sources = webSources.slice(0, 5);
+    // Kaynakları ekle
+    const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+    data.sources = chunks
+      .filter((c: any) => c.web?.uri && c.web?.title)
+      .map((c: any) => ({ title: c.web.title, uri: c.web.uri }))
+      .slice(0, 3); // Max 3 kaynak yeterli
 
     return data;
   } catch (error: any) {
     console.error("Analiz hatası:", error);
-    throw new Error(error.message || "Analiz sırasında bir hata oluştu.");
+    throw new Error(error.message || "Analiz yapılamadı.");
   }
 };
 
@@ -169,12 +138,8 @@ export const getRaceResults = async (city: string, dateStr: string): Promise<Dai
   try {
     const ai = getAI();
     const prompt = `
-    GÖREV: ${dateStr} tarihinde ${city} hipodromunda koşulan yarışların RESMİ SONUÇLARINI getir.
-    Ganyanları ve dereceleri bul. Sıralamayı doğru yap.
-    
-    İSTENEN JSON FORMATI:
-    (DailyProgram yapısında, horses dizisi içinde finish_time, ganyan alanları dolu olmalı)
-    SADECE JSON DÖNDÜR.
+    GÖREV: ${dateStr} - ${city} yarışlarının RESMİ SONUÇLARINI JSON olarak getir.
+    Atların ganyanlarını ve derecelerini mutlaka ekle.
     `;
 
     const response = await ai.models.generateContent({
@@ -183,21 +148,12 @@ export const getRaceResults = async (city: string, dateStr: string): Promise<Dai
       config: { ...COMMON_CONFIG, tools: [{ googleSearch: {} }] }
     });
 
-    if (!response.text) throw new Error("Sonuç verisi alınamadı");
+    if (!response.text) throw new Error("Sonuç verisi boş.");
     
     const data = JSON.parse(cleanJsonString(response.text));
-    if (!Array.isArray(data.races)) data.races = [];
-    
-    const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-    const webSources = chunks
-      .filter((c: any) => c.web?.uri && c.web?.title)
-      .map((c: any) => ({ title: c.web.title, uri: c.web.uri }));
-    
-    if (webSources.length > 0) data.sources = webSources.slice(0, 5);
-
     return data;
   } catch (error: any) {
     console.error("Sonuç hatası:", error);
-    throw new Error(error.message || "Sonuçlar alınırken hata oluştu.");
+    throw new Error("Sonuçlar alınamadı.");
   }
 };

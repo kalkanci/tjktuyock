@@ -15,24 +15,21 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
       
       <div className="relative z-10 max-w-md w-full flex flex-col items-center">
         
-        {/* Logo Area */}
         <div className="mb-10 relative group">
-          <div className="absolute inset-0 bg-gradient-to-r from-racing-gold to-yellow-600 rounded-full blur-xl opacity-20 group-hover:opacity-40 transition-opacity duration-500"></div>
-          <div className="w-24 h-24 bg-gradient-to-br from-racing-800 to-racing-900 rounded-3xl border border-racing-700 shadow-2xl flex items-center justify-center relative transform group-hover:scale-105 transition-transform duration-300">
-             <Trophy size={40} className="text-racing-gold drop-shadow-[0_2px_10px_rgba(251,191,36,0.3)]" />
+          <div className="absolute inset-0 bg-gradient-to-r from-racing-gold to-yellow-600 rounded-full blur-xl opacity-20"></div>
+          <div className="w-24 h-24 bg-gradient-to-br from-racing-800 to-racing-900 rounded-3xl border border-racing-700 shadow-2xl flex items-center justify-center relative transform hover:scale-105 transition-transform duration-300">
+             <Trophy size={40} className="text-racing-gold" />
           </div>
         </div>
 
-        {/* Text Area */}
         <h1 className="text-3xl font-bold text-white mb-3 tracking-tight">
           TJK <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-400">Analiz AI</span>
         </h1>
         
         <p className="text-gray-400 text-sm leading-relaxed mb-12 max-w-xs mx-auto">
-          Yapay zeka gücüyle günlük at yarışı bültenlerini analiz edin, detaylı istatistiklere ulaşın ve akıllı kuponlar oluşturun.
+          Yapay zeka destekli at yarışı analiz, bülten ve kupon tahmin platformu.
         </p>
 
-        {/* Features Grid */}
         <div className="grid grid-cols-2 gap-4 w-full mb-12">
            <div className="bg-racing-900/50 p-4 rounded-2xl border border-racing-800/50 backdrop-blur-sm">
               <Cpu className="text-blue-400 mb-2 mx-auto" size={20} />
@@ -44,7 +41,6 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
            </div>
         </div>
 
-        {/* Action Button */}
         <button 
           onClick={onStart}
           className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold py-4 rounded-2xl shadow-lg shadow-blue-900/30 flex items-center justify-center gap-2 group transition-all active:scale-95"
@@ -52,10 +48,6 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart }) => {
           <span>Analize Başla</span>
           <ChevronRight size={20} className="group-hover:translate-x-1 transition-transform" />
         </button>
-
-        <p className="mt-8 text-[10px] text-gray-600 uppercase tracking-widest">
-          Version 2.0 • AI Powered
-        </p>
       </div>
     </div>
   );
