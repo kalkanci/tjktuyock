@@ -17,57 +17,66 @@ export const generateAdvancedCoupon = (
   let legs: CouponLeg[] = [];
   let combinations = 1;
 
-  // Koşu listesini güvenli bir şekilde al
   const races = program.races;
 
-  // --- ÇOK AYAKLI OYUNLAR ---
+  // --- ÇOK AYAKLI OYUNLAR (6G, 5G vb.) ---
   if (['6G', '5G', '4G', '3G'].includes(betType)) {
     let legCount = 6;
     if (betType === '5G') legCount = 5;
     if (betType === '4G') legCount = 4;
     if (betType === '3G') legCount = 3;
 
-    // Yeterli koşu var mı kontrol et
     if (races.length < startRaceIndex + legCount) {
-      // Eğer veri eksik geldiyse (API hatası vb.), mevcut olan kadarını yapmaya çalış
-      // Ama kullanıcı deneyimi için null dönmektense, mevcut koşularla işlem yapalım
-      // return null; 
       legCount = Math.min(legCount, races.length - startRaceIndex);
     }
 
     const targetRaces = races.slice(startRaceIndex, startRaceIndex + legCount);
 
     legs = targetRaces.map((race) => {
-      // Sadece puana göre değil, biraz çeşitlilik katmak için mantık
-      const sortedHorses = [...race.horses].sort((a, b) => b.power_score - a.power_score);
+      // 1. Önce atları Güç Puanına (Power Score) göre sırala
+      const sortedByPower = [...race.horses].sort((a, b) => b.power_score - a.power_score);
       
       let selectedHorses: number[] = [];
       let isBanko = false;
 
-      // Puanlar çok yakınsa veya veri yetersizse çeşitlendir
-      // Banko: 1. atın puanı 90+ ve 2. ata 8 puan fark atmışsa
-      const firstHorse = sortedHorses[0];
-      const secondHorse = sortedHorses[1];
+      // --- BANKO MANTIĞI ---
+      // Eğer en güçlü at, ikinciye 10 puan fark atmışsa ve puanı 85 üstüyse BANKO'dur.
+      const bestHorse = sortedByPower[0];
+      const secondBest = sortedByPower[1];
+      const gap = (secondBest) ? bestHorse.power_score - secondBest.power_score : 100;
 
-      if (firstHorse && firstHorse.power_score > 88 && (!secondHorse || (firstHorse.power_score - secondHorse.power_score > 8))) {
-        selectedHorses = [firstHorse.no];
+      if (bestHorse && bestHorse.power_score >= 90 && gap >= 8) {
+        selectedHorses = [bestHorse.no];
         isBanko = true;
-      } else {
-        // Karışık ayak: İlk 4-5 atı al
-        // Eğer at sayısı azsa (örn 4 at koşuyorsa) hepsini yazma
-        const pickCount = Math.min(sortedHorses.length, 4);
-        selectedHorses = sortedHorses.slice(0, pickCount).map(h => h.no);
+      } 
+      else {
+        // --- KARIŞIK AYAK MANTIĞI ---
+        // Normalde ilk 4-5 atı alırız.
+        // Ancak atların "no" değerleri 1,2,3,4,5 ise bu veri şüphelidir (LLM hatası olabilir).
+        // Bu durumda bile güç puanına sadık kalacağız, çünkü yapay zeka sırt numarasını yanlış bilse bile favoriyi doğru biliyor olabilir.
         
-        // Sürpriz ekle: Bazen 6. veya 7. attan da ekle (Puanı 50 üstüyse)
-        if (sortedHorses.length > 5 && sortedHorses[5].power_score > 60) {
-            selectedHorses.push(sortedHorses[5].no);
+        let limit = 4; // Standart olarak 4 at yaz
+        if (sortedByPower.length > 10) limit = 5; // Kalabalık koşuda 5 at
+
+        // İlk 'limit' kadar atı seç
+        const mainPicks = sortedByPower.slice(0, limit);
+        selectedHorses = mainPicks.map(h => h.no);
+
+        // SÜRPRİZ EKLEME: 
+        // Eğer 6. sıradaki atın puanı hala yüksekse (örn: 60 üzeri), onu da ekle.
+        // Amaç 1-2-3-4 serisini bozmak ve bombayı yakalamak.
+        if (sortedByPower.length > limit) {
+           const surpriseHorse = sortedByPower[limit]; 
+           if (surpriseHorse.power_score > 65) {
+               selectedHorses.push(surpriseHorse.no);
+           }
         }
       }
 
       return {
         raceId: race.id,
-        raceNo: race.id,
-        selectedHorses: selectedHorses.sort((a, b) => a - b),
+        raceNo: race.id, // Resmi koşu numarası (örn: 1. Koşu)
+        selectedHorses: selectedHorses.sort((a, b) => a - b), // Kuponda küçükten büyüğe sıralı görünür
         isBanko
       };
     });
@@ -80,13 +89,11 @@ export const generateAdvancedCoupon = (
     const race = races.find(r => r.id === targetRaceId);
     if (!race) return null;
     
-    // Güç puanına göre sırala
     const sortedHorses = [...race.horses].sort((a, b) => b.power_score - a.power_score);
-    
     if (sortedHorses.length === 0) return null;
 
-    // IKILI & SIRALI: İlk 2 favori + 1 plase
     if (betType === 'IKILI' || betType === 'SIRALI' || betType === 'CIFTE') {
+        // İlk 3 favoriyi al
         const picks = sortedHorses.slice(0, 3).map(h => h.no);
         legs = [{
             raceId: race.id,
@@ -94,27 +101,21 @@ export const generateAdvancedCoupon = (
             selectedHorses: picks.sort((a,b) => a-b),
             isBanko: false
         }];
-        combinations = 6; // Tahmini kombinasyon (İkili için)
+        combinations = 6; 
     }
-    // TABELA (İlk 4): İlk 5 favori + 1 sürpriz
     else if (betType === 'TABELA') {
-        // İlk 5 favoriyi al
+        // Tabela için ilk 5 at + 1 sürpriz
         const picks = sortedHorses.slice(0, 5).map(h => h.no);
-        
-        // Eğer 1-2-3-4-5 ardışık geliyorsa ve atların gerçek numaraları bunlarsa yapacak bir şey yok,
-        // ama yapay zeka halüsinasyonu ise prompt düzeltildi.
-        // Yine de bir sürpriz at ekleyelim (Listenin ortasından)
-        if (sortedHorses.length > 6) {
+        if (sortedHorses.length > 6 && sortedHorses[6].power_score > 55) {
              picks.push(sortedHorses[6].no);
         }
-
         legs = [{
             raceId: race.id,
             raceNo: race.id,
             selectedHorses: picks.sort((a,b) => a-b),
             isBanko: false
         }];
-        combinations = 12; // Tabela kombine temsili
+        combinations = 1; // Tabela için kombinasyon hesabı karmaşıktır, 1 diyoruz.
     }
   }
 
@@ -122,7 +123,7 @@ export const generateAdvancedCoupon = (
     type: betType,
     legs,
     totalCombinations: combinations,
-    estimatedCost: Math.max(combinations * UNIT_PRICE, 1), // En az 1 TL
+    estimatedCost: Math.max(combinations * UNIT_PRICE, 1), 
     strategy: 'dengeli',
     raceIndexStart: startRaceIndex,
     targetRaceId: targetRaceId

@@ -2,86 +2,35 @@ import { GoogleGenAI } from "@google/genai";
 import { DailyProgram } from "../types";
 
 // --- GÜVENLİ API KEY YÖNETİMİ ---
-const getSafeApiKey = (): string => {
-  let key = '';
-
-  // 1. Vite / Modern Tarayıcı Kontrolü (import.meta)
-  try {
-    // @ts-ignore
-    if (typeof import.meta !== 'undefined' && import.meta.env) {
-      // @ts-ignore
-      // Vite ortamlarında VITE_API_KEY önceliklidir
-      key = import.meta.env.VITE_API_KEY || import.meta.env.API_KEY || '';
-    }
-  } catch (e) {
-    // import.meta erişimi başarısız olursa sessizce geç
-  }
-
-  // 2. Process Env Kontrolü (Fallback)
-  if (!key) {
-    try {
-      // Doğrudan process erişimi yerine window.process veya global process kontrolü
-      const p = (typeof process !== 'undefined') ? process : 
-                (typeof window !== 'undefined' && (window as any).process) ? (window as any).process : 
-                {};
-      
-      const env = p.env || {};
-      
-      key = env.VITE_API_KEY ||
-            env.API_KEY || 
-            env.REACT_APP_API_KEY || 
-            env.NEXT_PUBLIC_API_KEY || 
-            '';
-    } catch (e) {
-      // process erişimi hatası
-    }
-  }
-  
-  // Debug için (Key'in kendisini gizle, sadece varlığını yaz)
-  if (key) {
-    console.log("API Key loaded successfully from environment.");
-  } else {
-    console.warn("API Key could not be found in VITE_API_KEY or API_KEY.");
-  }
-
-  return key;
-};
-
-// API Key kontrolü için helper
+// Guidelines: The API key must be obtained exclusively from the environment variable process.env.API_KEY.
 export const hasValidApiKey = (): boolean => {
-  const key = getSafeApiKey();
-  return !!key && key.length > 0 && key !== 'missing_api_key';
+  return !!process.env.API_KEY;
 };
 
-// Lazy initialization
 let aiInstance: GoogleGenAI | null = null;
 
 const getAI = () => {
   if (!aiInstance) {
-    const apiKey = getSafeApiKey();
-    // Boş key ile başlatırsak istek anında hata döner, app çökmez.
-    aiInstance = new GoogleGenAI({ apiKey: apiKey || 'missing_api_key' });
+    aiInstance = new GoogleGenAI({ apiKey: process.env.API_KEY });
   }
   return aiInstance;
 };
 
-const modelId = "gemini-2.5-flash";
+// Modeli biraz daha "yaratıcılıktan uzak, veriye sadık" moda çekiyoruz
+const modelId = "gemini-2.5-flash"; 
 
 const COMMON_CONFIG = {
-  temperature: 0.2, // Daha tutarlı veri için düşürüldü
-  topK: 40,
-  topP: 0.95,
-  maxOutputTokens: 8192, // Tüm programı çekebilmek için limit artırıldı
+  temperature: 0.0, // SIFIR YAPILDI: Halüsinasyonu engellemek için en kritik ayar. Sadece gerçeği yazmalı.
+  topK: 20,
+  topP: 0.8,
+  maxOutputTokens: 8192,
 };
 
 const cleanJsonString = (str: string) => {
   if (!str) return "{}";
-  // Regex kullanarak tüm markdown bloklarını temizle (Global flag 'g' önemli)
   const cleaned = str.replace(/```json/g, "").replace(/```/g, "").trim();
-  
   const start = cleaned.search(/[{[]/);
   const end = Math.max(cleaned.lastIndexOf('}'), cleaned.lastIndexOf(']'));
-  
   if (start !== -1 && end !== -1 && end > start) {
     return cleaned.substring(start, end + 1);
   }
@@ -93,12 +42,15 @@ const cleanJsonString = (str: string) => {
 export const getDailyCities = async (dateStr: string): Promise<string[]> => {
   try {
     const ai = getAI();
-    if (!hasValidApiKey()) {
-        console.error("API Key eksik.");
-        return [];
-    }
+    if (!hasValidApiKey()) return [];
 
-    const prompt = `Bugün (${dateStr}) Türkiye'de TJK yarış programı olan şehirleri JSON array olarak döndür. Örn: ["Bursa", "Şanlıurfa"]. Yoksa [] dön.`;
+    // Prompt, Google Search'ü spesifik sitelere yönlendiriyor
+    const prompt = `
+    GÖREV: ${dateStr} tarihi için "TJK Yarış Programı"nı ara.
+    SORU: Bugün hangi şehirlerde at yarışı var?
+    ÇIKTI: Sadece şehir isimlerini içeren JSON Array döndür. Örn: ["İstanbul", "Elazığ"]. 
+    Eğer program yoksa [] döndür.
+    `;
 
     const response = await ai.models.generateContent({
       model: modelId,
@@ -122,62 +74,63 @@ export const analyzeRaces = async (city: string, dateStr: string): Promise<Daily
     const ai = getAI();
     if (!hasValidApiKey()) throw new Error("API Anahtarı bulunamadı.");
 
+    // --- KRİTİK GÜNCELLEME: Prompt artık veriyi "üretmiyor", "bulup çıkarıyor" ---
     const prompt = `
-    ROL: Uzman TJK At Yarışı Analisti.
-    GÖREV: ${dateStr} tarihli ${city} hipodromundaki yarış programını eksiksiz analiz et.
+    GÖREV: TJK (Türkiye Jokey Kulübü) ${dateStr} tarihli ${city} hipodromu RESMİ yarış programını bul ve verileri çıkar.
     
-    KURALLAR:
-    1. O gün kaç koşu varsa (Örn: 9 koşu) HEPSİNİ JSON'a ekle. Asla 3-4 koşudan sonra kesme.
-    2. "no" alanı atın GERÇEK SIRT NUMARASI olmalı. (Asla 1'den başlayıp sıralı gitme, gerçek bültendeki numarayı yaz).
-    3. "power_score" (Güç Puanı) alanını, favori atlar için 85-100 arası, sürprizler için 50-80 arası gerçekçi verilerle doldur. Asla tüm atlara 1,2,3 diye sıra verme.
-    4. Her koşu için en az 6-7 at listele.
-    5. Geriye SADECE saf JSON döndür. Markdown kullanma.
-    
-    JSON ŞEMASI:
+    AŞAMA 1: İNTERNET ARAMASI
+    Şu terimleri kullanarak Google'da arama yap: "TJK ${dateStr} ${city} yarış programı", "TJK ${dateStr} ${city} bülteni", "Nesine at yarışı bülteni ${dateStr} ${city}".
+
+    AŞAMA 2: VERİ ÇIKARMA KURALLARI (ÇOK ÖNEMLİ)
+    1. **SAATLER:** Asla tahmin etme. Arama sonuçlarında gördüğün GERÇEK saatleri yaz. (Örn: İstanbul 1. koşu 15:00 ise 15:00 yaz, 13:30 yazma).
+    2. **SIRT NUMARASI (no):** Atların "no" alanı, listedeki sırası (1,2,3,4) DEĞİLDİR. Atın formasında yazan "Sırt Numarası"dır. Arama sonuçlarında genelde at isminin yanında parantez içinde veya solunda yazar (Örn: "5. BOLD PILOT" -> No: 5). ASLA 1'den başlayıp sıralı numara verme. Karışık olmalı (Örn: 3, 7, 1, 9...).
+    3. **TÜM KOŞULAR:** O gün 9 koşu varsa 9'unu da getir. 10 varsa 10'unu da getir. Kesme yapma.
+    4. **PUANLAMA:** "power_score" değerini favori atlara (AGF oranı yüksek olanlara) yüksek ver (85-100 arası). Sürprizlere düşük ver.
+
+    AŞAMA 3: JSON FORMATI
+    Sadece aşağıdaki formatta saf JSON döndür. Yorum yapma.
+
     {
       "city": "${city}",
       "date": "${dateStr}",
-      "summary": "Programın genel zorluk derecesi ve öne çıkan jokeyler hakkında kısa bilgi.",
+      "summary": "Program hakkında kısa, gerçekçi bir özet (Örn: 9 koşulu program 15:00'te başlıyor. Favori...)",
       "races": [
         {
           "id": 1,
-          "time": "13:30",
-          "name": "ŞARTLI-3",
+          "time": "15:00", 
+          "name": "ŞARTLI-3/Dişi",
           "distance": "1400m",
-          "trackType": "Kum",
+          "trackType": "Sentetik",
           "horses": [
-            { "no": 4, "name": "BOLD PILOT", "jockey": "H.KARATAŞ", "weight": "60", "power_score": 95, "risk_level": "düşük" },
-            { "no": 8, "name": "GRAND EKINOKS", "jockey": "S.BOYRAZ", "weight": "58", "power_score": 88, "risk_level": "orta" }
+            { "no": 4, "name": "AT İSMİ", "jockey": "JOKEY", "weight": "58", "power_score": 92, "risk_level": "düşük" },
+            { "no": 11, "name": "DİĞER AT", "jockey": "JOKEY", "weight": "50", "power_score": 60, "risk_level": "yüksek" }
           ]
-        },
-        ... (TÜM KOŞULAR BURAYA EKLENECEK)
+        }
       ]
     }
     `;
 
-    // Daha uzun yanıtlar için output token limitini artırmamız gerekebilir ama
-    // standart config genellikle yeterlidir. Prompt'u güçlendirmek en iyisi.
     const response = await ai.models.generateContent({
       model: modelId,
       contents: prompt,
       config: { 
         ...COMMON_CONFIG, 
-        tools: [{ googleSearch: {} }],
-        // responseMimeType: "application/json" // Bazen bu hata verebilir, plain text alıp parse etmek daha güvenli
+        tools: [{ googleSearch: {} }] // Google Search ZORUNLU
       }
     });
 
     if (!response.text) throw new Error("AI yanıtı boş.");
 
-    console.log("AI Response Length:", response.text.length); // Debug için
+    // console.log("Raw Response:", response.text); // Debug
 
     const data = JSON.parse(cleanJsonString(response.text));
     
+    // Kaynakları ekle
     const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
     data.sources = chunks
       .filter((c: any) => c.web?.uri && c.web?.title)
       .map((c: any) => ({ title: c.web.title, uri: c.web.uri }))
-      .slice(0, 3);
+      .slice(0, 4);
 
     return data;
   } catch (error: any) {
@@ -192,8 +145,11 @@ export const getRaceResults = async (city: string, dateStr: string): Promise<Dai
     if (!hasValidApiKey()) throw new Error("API Anahtarı bulunamadı.");
 
     const prompt = `
-    GÖREV: ${dateStr} - ${city} yarışlarının RESMİ SONUÇLARINI JSON olarak getir.
-    Atların ganyanlarını ve derecelerini mutlaka ekle. Tüm koşuları getir.
+    GÖREV: ${dateStr} - ${city} at yarışı RESMİ SONUÇLARINI bul.
+    KURALLAR:
+    1. Sadece biten koşuları getir.
+    2. Atların bitiriş sırasını, ganyanını ve derecesini gerçek verilerden al.
+    3. JSON formatında döndür.
     `;
 
     const response = await ai.models.generateContent({
