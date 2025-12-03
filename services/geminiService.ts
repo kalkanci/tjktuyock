@@ -1,14 +1,24 @@
 import { GoogleGenAI } from "@google/genai";
 import { DailyProgram } from "../types";
 
-// Always use process.env.API_KEY per guidelines
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// --- API CLIENT MANAGEMENT ---
+
+let aiInstance: GoogleGenAI | null = null;
+
+const getAI = () => {
+  if (aiInstance) return aiInstance;
+
+  // The API key must be obtained exclusively from the environment variable process.env.API_KEY.
+  // Assume this variable is pre-configured, valid, and accessible.
+  aiInstance = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  return aiInstance;
+};
 
 // Modeli biraz daha "yaratıcılıktan uzak, veriye sadık" moda çekiyoruz
 const modelId = "gemini-2.5-flash"; 
 
 const COMMON_CONFIG = {
-  temperature: 0.0, // SIFIR YAPILDI: Halüsinasyonu engellemek için en kritik ayar. Sadece gerçeği yazmalı.
+  temperature: 0.0, // SIFIR YAPILDI: Halüsinasyonu engellemek için en kritik ayar.
   topK: 20,
   topP: 0.8,
   maxOutputTokens: 8192,
@@ -29,6 +39,8 @@ const cleanJsonString = (str: string) => {
 
 export const getDailyCities = async (dateStr: string): Promise<string[]> => {
   try {
+    const ai = getAI();
+    
     // Prompt, Google Search'ü spesifik sitelere yönlendiriyor
     const prompt = `
     GÖREV: ${dateStr} tarihi için "TJK Yarış Programı"nı ara.
@@ -48,14 +60,17 @@ export const getDailyCities = async (dateStr: string): Promise<string[]> => {
       return Array.isArray(parsed) ? parsed : [];
     }
     return [];
-  } catch (error) {
+  } catch (error: any) {
     console.error("Şehir verisi alınamadı:", error);
-    return [];
+    // Hata mesajını yukarı fırlat ki UI'da görünsün
+    throw new Error(error.message || "Şehir listesi alınırken hata oluştu.");
   }
 };
 
 export const analyzeRaces = async (city: string, dateStr: string): Promise<DailyProgram> => {
   try {
+    const ai = getAI();
+    
     // --- KRİTİK GÜNCELLEME: Prompt artık veriyi "üretmiyor", "bulup çıkarıyor" ---
     const prompt = `
     GÖREV: TJK (Türkiye Jokey Kulübü) ${dateStr} tarihli ${city} hipodromu RESMİ yarış programını bul ve verileri çıkar.
@@ -103,8 +118,6 @@ export const analyzeRaces = async (city: string, dateStr: string): Promise<Daily
 
     if (!response.text) throw new Error("AI yanıtı boş.");
 
-    // console.log("Raw Response:", response.text); // Debug
-
     const data = JSON.parse(cleanJsonString(response.text));
     
     // Kaynakları ekle
@@ -123,6 +136,8 @@ export const analyzeRaces = async (city: string, dateStr: string): Promise<Daily
 
 export const getRaceResults = async (city: string, dateStr: string): Promise<DailyProgram> => {
   try {
+    const ai = getAI();
+
     const prompt = `
     GÖREV: ${dateStr} - ${city} at yarışı RESMİ SONUÇLARINI bul.
     KURALLAR:
