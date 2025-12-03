@@ -13,19 +13,24 @@ const getSafeApiKey = (): string => {
       key = import.meta.env.VITE_API_KEY || import.meta.env.API_KEY || '';
     }
   } catch (e) {
-    // import.meta erişimi başarısız olursa (örneğin eski build araçları) sessizce geç
+    // import.meta erişimi başarısız olursa sessizce geç
   }
 
   // 2. Process Env Kontrolü (Fallback)
   if (!key) {
     try {
-      if (typeof process !== 'undefined' && process.env) {
-        key = process.env.API_KEY || 
-              process.env.REACT_APP_API_KEY || 
-              process.env.NEXT_PUBLIC_API_KEY || 
-              process.env.VITE_API_KEY || 
-              '';
-      }
+      // Doğrudan process erişimi yerine window.process veya global process kontrolü
+      const p = (typeof process !== 'undefined') ? process : 
+                (typeof window !== 'undefined' && (window as any).process) ? (window as any).process : 
+                {};
+      
+      const env = p.env || {};
+      
+      key = env.API_KEY || 
+            env.REACT_APP_API_KEY || 
+            env.NEXT_PUBLIC_API_KEY || 
+            env.VITE_API_KEY || 
+            '';
     } catch (e) {
       // process erişimi hatası
     }
@@ -34,15 +39,18 @@ const getSafeApiKey = (): string => {
   return key;
 };
 
+// API Key kontrolü için helper
+export const hasValidApiKey = (): boolean => {
+  const key = getSafeApiKey();
+  return !!key && key.length > 0 && key !== 'missing_api_key';
+};
+
 // Lazy initialization
 let aiInstance: GoogleGenAI | null = null;
 
 const getAI = () => {
   if (!aiInstance) {
     const apiKey = getSafeApiKey();
-    if (!apiKey) {
-      console.warn("API Key bulunamadı. Lütfen .env dosyasını veya Vercel ortam değişkenlerini kontrol edin.");
-    }
     // Boş key ile başlatırsak istek anında hata döner, app çökmez.
     aiInstance = new GoogleGenAI({ apiKey: apiKey || 'missing_api_key' });
   }
@@ -76,9 +84,8 @@ const cleanJsonString = (str: string) => {
 export const getDailyCities = async (dateStr: string): Promise<string[]> => {
   try {
     const ai = getAI();
-    // Key kontrolü burada yapılır, eğer key yoksa boş dizi dönerek UI'ın render olmasını sağla
-    if (!getSafeApiKey()) {
-        console.error("API Key eksik olduğu için şehirler getirilemedi.");
+    if (!hasValidApiKey()) {
+        console.error("API Key eksik.");
         return [];
     }
 
@@ -104,7 +111,7 @@ export const getDailyCities = async (dateStr: string): Promise<string[]> => {
 export const analyzeRaces = async (city: string, dateStr: string): Promise<DailyProgram> => {
   try {
     const ai = getAI();
-    if (!getSafeApiKey()) throw new Error("API Anahtarı Eksik. Lütfen ayarları kontrol edin.");
+    if (!hasValidApiKey()) throw new Error("API Anahtarı bulunamadı.");
 
     const prompt = `
     ROL: Uzman At Yarışı Analisti.
@@ -157,7 +164,7 @@ export const analyzeRaces = async (city: string, dateStr: string): Promise<Daily
 export const getRaceResults = async (city: string, dateStr: string): Promise<DailyProgram> => {
   try {
     const ai = getAI();
-    if (!getSafeApiKey()) throw new Error("API Anahtarı Eksik.");
+    if (!hasValidApiKey()) throw new Error("API Anahtarı bulunamadı.");
 
     const prompt = `
     GÖREV: ${dateStr} - ${city} yarışlarının RESMİ SONUÇLARINI JSON olarak getir.

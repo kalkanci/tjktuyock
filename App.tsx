@@ -1,11 +1,11 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { Layout } from './components/Layout';
 import { FilterBar } from './components/FilterBar';
 import { RaceCard } from './components/RaceCard';
 import { LoadingOverlay, LoadingType } from './components/LoadingOverlay';
-import { analyzeRaces, getDailyCities, getRaceResults } from './services/geminiService';
+import { analyzeRaces, getDailyCities, getRaceResults, hasValidApiKey } from './services/geminiService';
 import { AnalysisState, Page } from './types';
-import { AlertTriangle, ExternalLink, Filter, Info } from 'lucide-react';
+import { AlertTriangle, ExternalLink, Filter, Info, Lock } from 'lucide-react';
 import { DashboardChart } from './components/DashboardChart';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { CouponCreator } from './components/CouponCreator';
@@ -13,6 +13,7 @@ import { CouponCreator } from './components/CouponCreator';
 const App: React.FC = () => {
   // Navigation State
   const [currentPage, setCurrentPage] = useState<Page>('welcome');
+  const [apiKeyError, setApiKeyError] = useState<boolean>(false);
   
   // Common Data State
   const todayStr = new Date().toISOString().split('T')[0];
@@ -31,6 +32,14 @@ const App: React.FC = () => {
 
   const [selectedRaceId, setSelectedRaceId] = useState<number | 'all'>('all');
 
+  // --- INIT CHECK ---
+  useEffect(() => {
+    // Uygulama açıldığında API Key kontrolü yap
+    if (!hasValidApiKey()) {
+      setApiKeyError(true);
+    }
+  }, []);
+
   // --- HANDLERS ---
 
   const handleNavigate = (page: Page) => {
@@ -39,6 +48,7 @@ const App: React.FC = () => {
   };
 
   const handleStartApp = () => {
+    if (apiKeyError) return; // Key yoksa başlatma
     setCurrentPage('bulletin');
   };
 
@@ -52,6 +62,8 @@ const App: React.FC = () => {
   };
 
   const handleFindCities = useCallback(async () => {
+    if (apiKeyError) return;
+
     setLoadingType('cities');
     setAvailableCities([]);
     setSelectedCity(null);
@@ -62,7 +74,6 @@ const App: React.FC = () => {
       const cities = await getDailyCities(date);
       setAvailableCities(cities);
       if (cities.length === 0) {
-        // Hata mesajını aktif sayfaya yaz
         const errorMsg = "Bu tarihte kayıtlı bir yarış programı bulunamadı.";
         if (currentPage === 'bulletin' || currentPage === 'coupon-creator') setBulletinState(prev => ({ ...prev, error: errorMsg }));
         else setResultsState(prev => ({ ...prev, error: errorMsg }));
@@ -74,17 +85,17 @@ const App: React.FC = () => {
     } finally {
       setLoadingType(null);
     }
-  }, [date, currentPage]);
+  }, [date, currentPage, apiKeyError]);
 
   const handleCitySelect = useCallback(async (city: string) => {
+    if (apiKeyError) return;
+
     setSelectedCity(city);
     
     const isResultsPage = currentPage === 'results';
-    // Kupon sayfası bülten verisini kullanır
     const activeSetState = isResultsPage ? setResultsState : setBulletinState;
     const currentState = isResultsPage ? resultsState : bulletinState;
 
-    // Eğer o şehir için veri zaten hafızada varsa tekrar çekme (Cache mantığı)
     if (currentState.data && currentState.data.city === city && currentState.data.date === date) {
       return;
     }
@@ -111,7 +122,7 @@ const App: React.FC = () => {
     } finally {
       setLoadingType(null);
     }
-  }, [date, currentPage, bulletinState.data, resultsState.data]);
+  }, [date, currentPage, bulletinState.data, resultsState.data, apiKeyError]);
 
   // --- DERIVED STATE ---
   
@@ -127,6 +138,39 @@ const App: React.FC = () => {
   }, [currentState.data, selectedRaceId]);
 
   // --- RENDER CONTENT ---
+
+  // CRITICAL: Eğer API Key yoksa uygulama açılmasın, uyarı versin.
+  if (apiKeyError) {
+    return (
+      <div className="min-h-screen bg-black flex flex-col items-center justify-center p-6 text-center">
+        <div className="max-w-md w-full bg-racing-900 border border-red-900/50 rounded-2xl p-8 shadow-2xl">
+          <div className="w-16 h-16 bg-red-900/20 rounded-full flex items-center justify-center mx-auto mb-6">
+            <Lock className="text-red-500 w-8 h-8" />
+          </div>
+          <h1 className="text-xl font-bold text-white mb-3">API Anahtarı Eksik</h1>
+          <p className="text-gray-400 text-sm mb-6 leading-relaxed">
+            Uygulamanın çalışabilmesi için Gemini API anahtarı gereklidir. 
+          </p>
+          <div className="bg-black/40 p-4 rounded-lg border border-racing-800 text-left mb-6">
+            <h4 className="text-xs font-bold text-gray-300 mb-2 uppercase">Vercel Kurulumu:</h4>
+            <ol className="text-xs text-gray-500 space-y-2 list-decimal list-inside">
+              <li>Vercel Projenize gidin.</li>
+              <li>Settings &gt; Environment Variables sekmesini açın.</li>
+              <li>Key: <code className="text-blue-400">API_KEY</code></li>
+              <li>Value: <span className="italic">Gemini API Anahtarınız</span></li>
+              <li>Projeyi Redeploy edin.</li>
+            </ol>
+          </div>
+          <button 
+            onClick={() => window.location.reload()}
+            className="w-full bg-racing-800 hover:bg-racing-700 text-white font-bold py-3 rounded-xl transition-colors border border-racing-700"
+          >
+            Sayfayı Yenile
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const renderContent = () => {
     if (currentPage === 'welcome') {
