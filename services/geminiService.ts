@@ -10,6 +10,7 @@ const getSafeApiKey = (): string => {
     // @ts-ignore
     if (typeof import.meta !== 'undefined' && import.meta.env) {
       // @ts-ignore
+      // Vite ortamlarında VITE_API_KEY önceliklidir
       key = import.meta.env.VITE_API_KEY || import.meta.env.API_KEY || '';
     }
   } catch (e) {
@@ -26,14 +27,21 @@ const getSafeApiKey = (): string => {
       
       const env = p.env || {};
       
-      key = env.API_KEY || 
+      key = env.VITE_API_KEY ||
+            env.API_KEY || 
             env.REACT_APP_API_KEY || 
             env.NEXT_PUBLIC_API_KEY || 
-            env.VITE_API_KEY || 
             '';
     } catch (e) {
       // process erişimi hatası
     }
+  }
+  
+  // Debug için (Key'in kendisini gizle, sadece varlığını yaz)
+  if (key) {
+    console.log("API Key loaded successfully from environment.");
+  } else {
+    console.warn("API Key could not be found in VITE_API_KEY or API_KEY.");
   }
 
   return key;

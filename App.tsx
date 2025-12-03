@@ -5,7 +5,7 @@ import { RaceCard } from './components/RaceCard';
 import { LoadingOverlay, LoadingType } from './components/LoadingOverlay';
 import { analyzeRaces, getDailyCities, getRaceResults, hasValidApiKey } from './services/geminiService';
 import { AnalysisState, Page } from './types';
-import { AlertTriangle, ExternalLink, Filter, Info, Lock } from 'lucide-react';
+import { AlertTriangle, ExternalLink, Filter, Info, Lock, Key, ChevronRight } from 'lucide-react';
 import { DashboardChart } from './components/DashboardChart';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { CouponCreator } from './components/CouponCreator';
@@ -143,29 +143,55 @@ const App: React.FC = () => {
   if (apiKeyError) {
     return (
       <div className="min-h-screen bg-black flex flex-col items-center justify-center p-6 text-center">
-        <div className="max-w-md w-full bg-racing-900 border border-red-900/50 rounded-2xl p-8 shadow-2xl">
-          <div className="w-16 h-16 bg-red-900/20 rounded-full flex items-center justify-center mx-auto mb-6">
-            <Lock className="text-red-500 w-8 h-8" />
+        <div className="max-w-2xl w-full bg-racing-900 border border-racing-800 rounded-2xl p-8 shadow-2xl">
+          
+          <div className="flex flex-col items-center mb-8">
+             <div className="w-20 h-20 bg-racing-800 rounded-full flex items-center justify-center mb-4 ring-4 ring-racing-700">
+                <Key className="text-racing-gold w-10 h-10" />
+             </div>
+             <h1 className="text-2xl font-bold text-white mb-2">Kurulum Gerekli</h1>
+             <p className="text-gray-400">Uygulamanın çalışması için Google'dan ücretsiz bir API anahtarı almalısınız.</p>
           </div>
-          <h1 className="text-xl font-bold text-white mb-3">API Anahtarı Eksik</h1>
-          <p className="text-gray-400 text-sm mb-6 leading-relaxed">
-            Uygulamanın çalışabilmesi için Gemini API anahtarı gereklidir. 
-          </p>
-          <div className="bg-black/40 p-4 rounded-lg border border-racing-800 text-left mb-6">
-            <h4 className="text-xs font-bold text-gray-300 mb-2 uppercase">Vercel Kurulumu:</h4>
-            <ol className="text-xs text-gray-500 space-y-2 list-decimal list-inside">
-              <li>Vercel Projenize gidin.</li>
-              <li>Settings &gt; Environment Variables sekmesini açın.</li>
-              <li>Key: <code className="text-blue-400">API_KEY</code></li>
-              <li>Value: <span className="italic">Gemini API Anahtarınız</span></li>
-              <li>Projeyi Redeploy edin.</li>
-            </ol>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 text-left">
+             <div className="bg-racing-950/50 p-5 rounded-xl border border-racing-800">
+                <div className="flex items-center gap-3 mb-3">
+                   <span className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-xs">1</span>
+                   <h3 className="font-bold text-white">Anahtarı Alın</h3>
+                </div>
+                <p className="text-xs text-gray-400 mb-4">Google AI Studio üzerinden ücretsiz Gemini API anahtarı oluşturun.</p>
+                <a 
+                  href="https://aistudio.google.com/app/apikey" 
+                  target="_blank" 
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-2 text-xs font-bold text-blue-400 hover:text-blue-300 transition-colors"
+                >
+                  <ExternalLink size={12} />
+                  Google AI Studio'ya Git
+                </a>
+             </div>
+
+             <div className="bg-racing-950/50 p-5 rounded-xl border border-racing-800">
+                <div className="flex items-center gap-3 mb-3">
+                   <span className="w-6 h-6 rounded-full bg-purple-600 text-white flex items-center justify-center font-bold text-xs">2</span>
+                   <h3 className="font-bold text-white">Vercel'e Ekleyin</h3>
+                </div>
+                <ul className="text-xs text-gray-400 space-y-2">
+                   <li>1. Vercel projenizde <strong>Settings</strong> sekmesine gidin.</li>
+                   <li>2. <strong>Environment Variables</strong> menüsünü açın.</li>
+                   <li>3. Key: <code className="text-purple-400">VITE_API_KEY</code></li>
+                   <li>4. Value: <em>Aldığınız kodu yapıştırın</em></li>
+                   <li>5. Projenizi <strong>Redeploy</strong> edin.</li>
+                </ul>
+             </div>
           </div>
+
           <button 
             onClick={() => window.location.reload()}
-            className="w-full bg-racing-800 hover:bg-racing-700 text-white font-bold py-3 rounded-xl transition-colors border border-racing-700"
+            className="w-full md:w-auto px-8 bg-racing-800 hover:bg-racing-700 text-white font-bold py-3 rounded-xl transition-colors border border-racing-700 flex items-center justify-center gap-2 mx-auto"
           >
-            Sayfayı Yenile
+            <RefreshCw size={18} />
+            Ayarları Yaptım, Sayfayı Yenile
           </button>
         </div>
       </div>
@@ -337,3 +363,5 @@ const App: React.FC = () => {
 };
 
 export default App;
+// Helper for Refresh Icon in error view
+import { RefreshCw } from 'lucide-react';
