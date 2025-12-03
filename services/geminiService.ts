@@ -33,7 +33,6 @@ const getAI = () => {
   const apiKey = getApiKey();
   
   if (!apiKey) {
-    // Detailed error for debugging
     console.error("API Key missing. Checked process.env.API_KEY and import.meta.env.VITE_API_KEY");
     throw new Error("API Anahtarı bulunamadı. Vercel'de 'VITE_API_KEY' tanımlı olduğundan emin olun.");
   }
@@ -45,10 +44,10 @@ const getAI = () => {
 const modelId = "gemini-2.5-flash"; 
 
 const COMMON_CONFIG = {
-  temperature: 0.3, // Biraz esneklik tanıdık (0.0 bazen tıkanıyor)
+  temperature: 0.0, // KESİN VERİ: Yaratıcılık tamamen kapatıldı. Sadece gerçek veri.
   topK: 40,
   topP: 0.95,
-  maxOutputTokens: 8192,
+  maxOutputTokens: 8192, // Maksimum çıktı uzunluğu (Tüm koşular sığsın diye)
 };
 
 const cleanJsonString = (str: string) => {
@@ -70,15 +69,12 @@ export const getDailyCities = async (dateStr: string): Promise<string[]> => {
   try {
     const ai = getAI();
     
-    // Prompt güncellendi: Daha basit ve hata toleranslı
     const prompt = `
-    TASK: Search for Turkish Jockey Club (TJK) race program for ${dateStr}.
-    GOAL: Identify which cities have horse races today.
+    TASK: Search for official Turkish Jockey Club (TJK) race schedule for ${dateStr}.
+    GOAL: List cities hosting races today.
     
-    OUTPUT: A JSON Array of city names (strings). e.g. ["İstanbul", "Adana"].
-    If you cannot find any info, or if there are no races, return [].
-    
-    IMPORTANT: Respond ONLY with the JSON array.
+    OUTPUT: JSON Array of strings. e.g. ["İstanbul", "Kocaeli"].
+    Use Google Search to verify exact dates. If no races, return [].
     `;
 
     const response = await ai.models.generateContent({
@@ -93,7 +89,6 @@ export const getDailyCities = async (dateStr: string): Promise<string[]> => {
         const parsed = JSON.parse(cleaned);
         return Array.isArray(parsed) ? parsed : [];
       } catch (parseError) {
-        console.warn("City Parse Error, returning empty:", parseError);
         return [];
       }
     }
@@ -108,38 +103,47 @@ export const analyzeRaces = async (city: string, dateStr: string): Promise<Daily
   try {
     const ai = getAI();
     
+    // Prompt "Derinlemesine Tarama" moduna geçirildi.
     const prompt = `
-    You are a Horse Racing Analyst.
-    TARGET: TJK (Türkiye Jokey Kulübü) race program for ${city} on ${dateStr}.
+    MODE: OFFICIAL DATA SCRAPING (STRICT)
+    TARGET: Retrieve the COMPLETE TJK race program for ${city} on ${dateStr}.
     
     INSTRUCTIONS:
-    1. Search for "TJK ${dateStr} ${city} yarış programı" and "TJK ${dateStr} ${city} bülteni".
-    2. Extract ALL races (Koşu 1, Koşu 2, etc.).
-    3. For each race, get: Time, Race Name, Distance, Track Type.
-    4. For horses: Get Number (No), Name, Jockey.
-    5. PREDICTION: Assign a 'power_score' (0-100) based on favorites found in search.
+    1. PERFORM A DEEP SEARCH: Use Google Search to find the official "TJK Yarış Programı" or reliable sources like "Nalkapon", "Liderform", "Fanatik" for this specific date and city.
     
-    CRITICAL OUTPUT RULE:
-    - You MUST return a valid JSON object.
-    - If you cannot find data, return a JSON with an empty "races" array and explain why in "summary".
-    - DO NOT return empty text.
+    2. RETRIEVE ALL RACES (CRITICAL): 
+       - A typical racing day has between 6 to 10 races.
+       - You MUST extract EVERY SINGLE RACE (Koşu 1, Koşu 2, ... up to the last one).
+       - DO NOT Summarize. DO NOT stop after 2 races.
+       - If there are 9 races, your JSON must contain 9 objects in the "races" array.
     
-    JSON FORMAT:
+    3. DATA ACCURACY:
+       - Use ONLY real data found in the search. Do not guess.
+       - For Horses: Get the exact "Sırt No" (Horse Number), "At İsmi" (Name), "Jokey" (Jockey), "Kilo" (Weight).
+       - For Race Info: Get exact Time, Distance (m), and Track Type (Çim/Kum/Sentetik).
+    
+    4. ANALYSIS (Power Score):
+       - Assign a 'power_score' (0-100) to each horse based on AGF (Altılı Ganyan Favorisi) rankings found in search. 
+       - Favori 1: 90-100 pts, Favori 2: 80-90 pts... Sürpriz: <60 pts.
+    
+    OUTPUT FORMAT (JSON ONLY):
     {
       "city": "${city}",
       "date": "${dateStr}",
-      "summary": "Detailed summary in Turkish...",
+      "summary": "Summarize the program (e.g., 'Today there are 9 races in ${city} starting at...'). Mention the favorites.",
       "races": [
         {
           "id": 1,
-          "time": "14:30", 
-          "name": "Maiden",
-          "distance": "1400m",
+          "time": "HH:MM", 
+          "name": "ŞARTLI-1",
+          "distance": "1200m",
           "trackType": "Kum",
           "horses": [
-            { "no": 1, "name": "BOLD PILOT", "jockey": "H.Karataş", "weight": "60", "power_score": 95, "risk_level": "düşük" }
+            { "no": 1, "name": "REAL NAME", "jockey": "REAL JOCKEY", "weight": "58", "power_score": 95, "risk_level": "düşük" },
+            ... (List ALL horses in this race)
           ]
-        }
+        },
+        ... (Repeat for ALL races. Do not skip any.)
       ]
     }
     `;
@@ -149,14 +153,13 @@ export const analyzeRaces = async (city: string, dateStr: string): Promise<Daily
       contents: prompt,
       config: { 
         ...COMMON_CONFIG, 
+        // Google Search aracı veri doğruluğu için zorunlu
         tools: [{ googleSearch: {} }]
       }
     });
 
     if (!response.text) {
-        // Fallback: Model search tool başarısız olduysa veya metin dönmediyse
-        console.error("AI returned empty text. Candidates:", response.candidates);
-        throw new Error("Yapay zeka bu şehir için veri oluşturamadı. Lütfen başka bir şehir veya tarih deneyin.");
+        throw new Error("Yapay zeka veri oluşturamadı. Lütfen tekrar deneyin.");
     }
 
     const data = JSON.parse(cleanJsonString(response.text));
@@ -168,20 +171,19 @@ export const analyzeRaces = async (city: string, dateStr: string): Promise<Daily
       .map((c: any) => ({ title: c.web.title, uri: c.web.uri }))
       .slice(0, 4);
     
-    // Veri kontrolü
+    // Boş veri kontrolü
     if (!data.races || !Array.isArray(data.races)) {
         data.races = [];
-        if (!data.summary) data.summary = "Program detayları alınamadı.";
     }
+    
+    // Eğer az koşu geldiyse (örn: 2 tane), kullanıcıya uyarı eklenebilir ama şu an sessizce dönüyoruz.
+    // Prompt'un gücü ile hepsini almaya çalışacağız.
 
     return data;
   } catch (error: any) {
     console.error("Analiz hatası:", error);
-    // Hata mesajını temizle
     let msg = error.message || "Analiz yapılamadı.";
-    if (msg.includes("JSON")) msg = "Veri formatı hatalı geldi.";
-    if (msg.includes("API Key")) msg = "API Anahtarı hatası.";
-    
+    if (msg.includes("JSON")) msg = "Veri işlenirken hata oluştu (JSON Parse).";
     throw new Error(msg);
   }
 };
@@ -191,9 +193,9 @@ export const getRaceResults = async (city: string, dateStr: string): Promise<Dai
     const ai = getAI();
 
     const prompt = `
-    Find TJK race results for ${city} on ${dateStr}.
-    Return JSON with finished races.
-    Format: { "city": "${city}", "date": "${dateStr}", "races": [...] }
+    TASK: Find OFFICIAL TJK race results for ${city} on ${dateStr}.
+    OUTPUT: JSON format containing ALL completed races.
+    Include: Winner horse name, Ganyan, Finish time.
     `;
 
     const response = await ai.models.generateContent({
