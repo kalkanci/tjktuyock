@@ -15,11 +15,33 @@ export const runAutonomousAgent = async (
     });
   };
 
-  // Vercel veya yerel .env dosyasından okur
-  const apiKey = process.env.API_KEY;
+  // --- API ANAHTARI ALGILAMA ---
+  let apiKey = '';
+
+  // 1. Yöntem: Vite (import.meta.env)
+  // Vite projelerinde değişkenler genellikle burada bulunur ve VITE_ öneki gerektirir.
+  try {
+    // @ts-ignore
+    if (typeof import.meta !== 'undefined' && import.meta.env) {
+      // @ts-ignore
+      apiKey = import.meta.env.VITE_API_KEY || import.meta.env.API_KEY || import.meta.env.REACT_APP_API_KEY;
+    }
+  } catch (e) {
+    // import.meta desteklenmiyorsa yoksay
+  }
+
+  // 2. Yöntem: process.env (Webpack, CRA, Next.js veya Node ortamı)
+  if (!apiKey && typeof process !== 'undefined' && process.env) {
+    apiKey = process.env.API_KEY || 
+             process.env.VITE_API_KEY || 
+             process.env.REACT_APP_API_KEY || 
+             '';
+  }
 
   if (!apiKey) {
-    throw new Error("API Anahtarı bulunamadı. Lütfen Vercel Environment Variables ayarlarını kontrol edin.");
+    throw new Error(
+      "API Anahtarı bulunamadı! Vercel'de 'VITE_API_KEY' adında bir Environment Variable tanımladığınızdan emin olun."
+    );
   }
 
   const ai = new GoogleGenAI({ apiKey });
