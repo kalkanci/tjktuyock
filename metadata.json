@@ -1,5 +1,5 @@
 {
-  "name": "TJK Analiz AI",
-  "description": "Yapay zeka destekli günlük at yarışı tahmin ve analiz platformu. Güncel verileri tarayarak istatistiksel tüyolar sunar.",
+  "name": "Autonomous Race Analyst",
+  "description": "AI Agent scanning web for racing predictions using Gemini 2.5 Flash.",
   "requestFramePermissions": []
 }

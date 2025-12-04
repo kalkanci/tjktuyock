@@ -1,134 +1,27 @@
 <!DOCTYPE html>
-<html lang="tr">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>TJK Analiz AI</title>
-    
-    <!-- CRITICAL: Process Polyfill MUST be first -->
-    <script>
-      window.process = window.process || { env: { NODE_ENV: 'production' } };
-    </script>
-
-    <!-- Global Error Handler -->
-    <script>
-      function showError(title, detail) {
-        const root = document.getElementById('root');
-        if (root) {
-             root.innerHTML = `
-              <div style="background:#09090b; color:#ef4444; padding:20px; font-family:sans-serif; height:100vh; display:flex; flex-direction:column; justify-content:center; align-items:center; text-align:center;">
-                <div style="background:#18181b; padding:30px; border-radius:16px; border:1px solid #27272a; max-width:400px; width:100%;">
-                  <h2 style="margin:0 0 10px 0; color:#fff;">${title}</h2>
-                  <p style="margin-bottom:20px; font-size:14px; color:#a1a1aa;">Uygulama başlatılamadı.</p>
-                  <pre style="background:#000; padding:10px; border-radius:8px; overflow:auto; text-align:left; font-size:11px; margin-bottom:20px; max-height:100px; color:#f87171;">${detail}</pre>
-                  <button onclick="window.location.reload()" style="padding:12px 24px; background:#2563eb; color:white; border:none; border-radius:8px; font-weight:bold; cursor:pointer;">Yeniden Dene</button>
-                </div>
-              </div>
-            `;
-        }
-      }
-
-      window.onerror = function(message, source, lineno, colno, error) {
-        showError("Uygulama Hatası", message);
-      };
-
-      window.onunhandledrejection = function(event) {
-        showError("Bağlantı Hatası", event.reason);
-      };
-
-      // Fallback Timeout
-      setTimeout(function() {
-        const root = document.getElementById('root');
-        if (root && (!root.hasChildNodes() || root.innerText.includes('Yükleniyor'))) {
-           console.warn("App load timeout triggered");
-           const isVercel = window.location.hostname.includes('vercel.app');
-           const msg = isVercel 
-             ? "API Anahtarı veya Build ayarlarını kontrol edin."
-             : "İnternet bağlantınızı kontrol edin veya sayfayı yenileyin.";
-           showError("Yükleme Zaman Aşımı", msg);
-        }
-      }, 4000);
-    </script>
-
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>New Project</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-      tailwind.config = {
-        theme: {
-          extend: {
-            colors: {
-              racing: {
-                950: '#000000',
-                900: '#09090b',
-                800: '#18181b',
-                700: '#27272a',
-                primary: '#2563eb',
-                secondary: '#4f46e5',
-                accent: '#10b981',
-                gold: '#f59e0b',
-                danger: '#ef4444',
-              }
-            },
-            animation: {
-              'fade-in': 'fadeIn 0.5s ease-out',
-              'slide-up': 'slideUp 0.5s ease-out',
-            },
-            keyframes: {
-              fadeIn: {
-                '0%': { opacity: '0' },
-                '100%': { opacity: '1' },
-              },
-              slideUp: {
-                '0%': { transform: 'translateY(20px)', opacity: '0' },
-                '100%': { transform: 'translateY(0)', opacity: '1' },
-              }
-            }
-          }
-        }
-      }
-    </script>
     <style>
-      body {
-        background-color: #000000;
-        color: #f8fafc;
-        font-family: 'Inter', system-ui, -apple-system, sans-serif;
-        margin: 0;
-        padding: 0;
-        overflow-x: hidden;
-      }
-      .no-scrollbar::-webkit-scrollbar { display: none; }
-      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-      
-      #root:empty::before {
-        content: 'TJK Analiz AI Yükleniyor...';
-        display: flex;
-        height: 100vh;
-        width: 100vw;
-        align-items: center;
-        justify-content: center;
-        color: #52525b;
-        font-family: monospace;
-        font-size: 14px;
-        background-color: #000;
-        flex-direction: column;
-      }
+      body { margin: 0; padding: 0; background: #000; color: #fff; }
     </style>
   <script type="importmap">
 {
   "imports": {
-    "recharts": "https://aistudiocdn.com/recharts@^3.5.1",
-    "react/": "https://aistudiocdn.com/react@^19.2.0/",
-    "react": "https://aistudiocdn.com/react@^19.2.0",
-    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.555.0",
-    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.30.0",
-    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
-    "react-dom": "https://aistudiocdn.com/react-dom@^19.2.0"
+    "react/": "https://aistudiocdn.com/react@^19.2.1/",
+    "react": "https://aistudiocdn.com/react@^19.2.1",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.1/",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.31.0",
+    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.555.0"
   }
 }
 </script>
 </head>
   <body>
     <div id="root"></div>
-    <!-- APP ENTRY POINT -->
     <script type="module" src="./index.tsx"></script>
   </body>
 </html>

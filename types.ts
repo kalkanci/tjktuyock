@@ -1,81 +1,55 @@
 
-export type Page = 'welcome' | 'bulletin' | 'results' | 'coupon-creator';
+export type RaceStatus = 'PENDING' | 'RUNNING' | 'FINISHED';
 
-export interface Horse {
-  no: number;
-  name: string;
-  jockey?: string;
-  weight?: string; // Kilo
-  
-  // Analiz Alanları (Eski power_score geriye uyumluluk için tutuluyor ama confidence ile maplenecek)
-  power_score: number; // 0-100 arası güç puanı (confidence * 100)
-  
-  // Yeni Yapay Zeka Analiz Alanları
-  prediction_type?: 'favorite' | 'surprise' | 'normal';
-  confidence?: number; // 0.0 - 1.0 arası
-  analysis_reason?: string; // "Son 3 koşusu iyi..."
-  tags?: string[]; // ["formda", "mesafe uyumlu"]
-  
-  // Sonuç Alanları
-  finish_time?: string; // Derece
-  ganyan?: string; // Ganyan
-  difference?: string; // Fark (Boy)
+export interface BetSuggestion {
+  type: 'GANYAN' | 'İKİLİ' | 'SIRALI İKİLİ' | 'ÇİFTE' | 'PLASE' | 'ÜÇLÜ BAHİS';
+  combination: string; // Örn: "1/2", "5 Tek"
+  confidence: number;
 }
 
-export type RaceStatus = 'waiting' | 'analyzing' | 'completed' | 'failed';
+export interface Runner {
+  horse_no: number;
+  horse_name: string;
+  is_banko: boolean;
+  is_surprise: boolean;
+  confidence: number;
+  reason: string;
+}
 
 export interface Race {
-  id: number;
-  time: string;
-  name: string;
-  distance: string;
-  trackType: string; // Çim/Kum
-  
-  horses: Horse[];
-  
-  race_summary?: string; // Koşu yorumu
-  status?: RaceStatus; // Analiz durumu
-}
-
-export interface DailyProgram {
   city: string;
-  date: string;
-  races: Race[];
-  summary: string;
-  sources: Array<{ title: string; uri: string }>;
+  race_no: number;
+  time: string; // "14:30"
+  status: RaceStatus;
+  runners: Runner[];
+  
+  // Sonuç Verileri
+  actual_winner_no?: number; // Eğer bittiyse kazanan at no
+  result_summary?: string; // "1 numaralı at kazandı, favori geldi."
+  success_rate?: 'HIT' | 'MISS' | 'CLOSE'; // Tahmin tuttu mu?
+  
+  // Bahis Önerileri
+  bets: BetSuggestion[];
+  
+  // Grounding
+  sources?: string[];
 }
 
-export interface AnalysisState {
-  loading: boolean;
-  data: DailyProgram | null;
-  error: string | null;
+export interface Prediction {
+  race_no: number;
+  city: string;
+  horse_name: string;
+  type: string;
+  confidence: number;
+  reason: string;
+  sources: string[];
 }
 
-// --- KUPON ve BAHİS TİPLERİ ---
-
-export type BetType = 
-  | '6G' // Altılı Ganyan
-  | '5G' // Beşli Ganyan
-  | '4G' // Dörtlü Ganyan
-  | '3G' // Üçlü Ganyan
-  | 'IKILI' // İkili Bahis
-  | 'SIRALI' // Sıralı İkili
-  | 'CIFTE' // Çifte Bahis
-  | 'TABELA'; // Tabela Bahis
-
-export interface CouponLeg {
-  raceId: number;
-  raceNo: number; // Yarışın resmi numarası
-  selectedHorses: number[]; // Seçilen at numaraları
-  isBanko: boolean; // Tek at mı?
+export interface AgentLog {
+  id: number;
+  message: string;
+  timestamp: string;
+  type: 'info' | 'success' | 'warning';
 }
 
-export interface Coupon {
-  type: BetType;
-  legs: CouponLeg[];
-  totalCombinations: number;
-  estimatedCost: number; // Tahmini Tutar
-  strategy: 'guvenli' | 'surpriz' | 'dengeli';
-  raceIndexStart?: number; // Hangi koşudan başlıyor (Ganyanlar için)
-  targetRaceId?: number; // Tek koşuluk oyunlar için hedef koşu
-}
+export type FilterType = 'TÜMÜ' | 'BANKO' | 'SÜRPRİZ';
